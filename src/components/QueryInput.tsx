@@ -63,7 +63,7 @@ export function QueryInput() {
   };
 
   return (
-    <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 max-h-[60vh] overflow-y-auto shrink-0">
+    <div className="bg-white dark:bg-gray-900 p-4 max-h-[60vh] overflow-y-auto shrink-0">
       <div className="max-w-4xl mx-auto">
         {/* Main input area */}
         <div className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent">

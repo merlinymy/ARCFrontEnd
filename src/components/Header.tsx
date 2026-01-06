@@ -2,18 +2,18 @@ import {
   Sun,
   Moon,
   Activity,
-  Menu,
   LogOut,
   FileText,
   Settings,
+  Menu,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 
 export function Header() {
-  const { state, setTheme, toggleSidebar, setActivePage } = useApp();
+  const { state, setTheme, setActivePage, toggleSidebar } = useApp();
   const { logout } = useAuth();
-  const { theme, sidebarOpen } = state;
+  const { theme } = state;
 
   // Navigation items with responsive labels
   const navItems = [
@@ -23,28 +23,20 @@ export function Header() {
   ];
 
   return (
-    <header className="h-14 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between px-4 shrink-0">
-      {/* Left section */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={toggleSidebar}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-          aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
-        >
-          <Menu className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-        </button>
+    <header className="h-[52px] bg-white dark:bg-gray-900 flex items-center justify-between px-3 shrink-0">
+      {/* Mobile menu button */}
+      <button
+        onClick={toggleSidebar}
+        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors md:hidden"
+        aria-label="Open menu"
+      >
+        <Menu className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+      </button>
 
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">ARC</span>
-          </div>
-          <span className="font-semibold text-gray-900 dark:text-gray-100 hidden sm:block">
-            ARC
-          </span>
-        </div>
-      </div>
+      {/* Spacer for desktop */}
+      <div className="hidden md:block" />
 
-      {/* Right section - Navigation */}
+      {/* Navigation */}
       <div className="flex items-center gap-1">
         {navItems.map(({ page, icon: Icon, label }) => {
           const isActive = state.activePage === page;
@@ -65,8 +57,6 @@ export function Header() {
             </button>
           );
         })}
-
-        <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
 
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

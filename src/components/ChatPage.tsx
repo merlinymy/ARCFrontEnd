@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { FileText, X } from 'lucide-react';
 import { ConversationThread } from './ConversationThread';
 import { QueryInput } from './QueryInput';
@@ -7,6 +8,13 @@ export function ChatPage() {
   const { state, dispatch } = useApp();
   const { papers, queryOptions } = state;
   const selectedPaperIds = queryOptions.paperFilter;
+  const [hasScrolledContent, setHasScrolledContent] = useState({ top: false, bottom: false });
+
+  const handleScroll = useCallback((scrollTop: number, scrollHeight: number, clientHeight: number) => {
+    const hasScrolledFromTop = scrollTop > 10;
+    const hasMoreBelow = scrollTop + clientHeight < scrollHeight - 10;
+    setHasScrolledContent({ top: hasScrolledFromTop, bottom: hasMoreBelow });
+  }, []);
 
   // Get selected paper objects (may not find all if they came from search results)
   const selectedPapers = papers.filter(p => selectedPaperIds.includes(p.id));
@@ -18,9 +26,15 @@ export function ChatPage() {
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 min-h-0">
+      {/* Top border - shows when content scrolled under header */}
+      <div className={`h-px shrink-0 transition-colors ${hasScrolledContent.top ? 'bg-gray-200 dark:bg-gray-700' : 'bg-transparent'}`} />
+
       <div className="flex-1 min-h-0 overflow-hidden">
-        <ConversationThread />
+        <ConversationThread onScroll={handleScroll} />
       </div>
+
+      {/* Bottom border - shows when more content below */}
+      <div className={`h-px shrink-0 transition-colors ${hasScrolledContent.bottom ? 'bg-gray-200 dark:bg-gray-700' : 'bg-transparent'}`} />
 
       {/* Paper filter indicator */}
       {selectedCount > 0 && (

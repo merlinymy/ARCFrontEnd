@@ -114,7 +114,11 @@ function PipelineProgress({ steps, webSearchProgress }: { steps: PipelineStepInf
   );
 }
 
-export function ConversationThread() {
+interface ConversationThreadProps {
+  onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number) => void;
+}
+
+export function ConversationThread({ onScroll }: ConversationThreadProps) {
   const { state } = useApp();
   const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState, webSearchProgress } = state;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -169,11 +173,17 @@ export function ConversationThread() {
       }
 
       lastScrollTop = currentScrollTop;
+
+      // Report scroll position to parent
+      onScroll?.(container.scrollTop, container.scrollHeight, container.clientHeight);
     };
+
+    // Initial call to set scroll state
+    onScroll?.(container.scrollTop, container.scrollHeight, container.clientHeight);
 
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [isAnchorVisible]);
+  }, [isAnchorVisible, onScroll]);
 
   // Reset state when conversation changes
   useEffect(() => {
