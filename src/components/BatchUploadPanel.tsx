@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { X, Minus, Upload, FileText } from 'lucide-react';
+import { X, Minus, Upload, FileText, AlertCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { BatchUploadItem } from './BatchUploadItem';
 
@@ -131,6 +131,21 @@ export function BatchUploadPanel() {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
+          {/* Duplicate files notification */}
+          {activeBatchUpload && skippedCount > 0 && (
+            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                  {skippedCount} duplicate file{skippedCount > 1 ? 's' : ''} skipped
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                  {skippedCount > 1 ? 'These files are' : 'This file is'} already in your library and won't be uploaded again.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Drop zone - show when no active batch */}
           {!activeBatchUpload && (
             <div

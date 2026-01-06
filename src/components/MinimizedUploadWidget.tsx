@@ -14,6 +14,7 @@ export function MinimizedUploadWidget() {
   const completedCount = tasks.filter((t) => t.status === 'complete').length;
   const failedCount = tasks.filter((t) => t.status === 'error').length;
   const totalCount = tasks.length;
+  const skippedCount = activeBatchUpload.skippedDuplicates ?? 0;
   // Calculate overall progress
   const totalProgress = tasks.reduce((sum, t) => sum + t.progressPercent, 0);
   const overallProgress = totalCount > 0 ? Math.round(totalProgress / totalCount) : 0;
@@ -98,6 +99,7 @@ export function MinimizedUploadWidget() {
               <>
                 {completedCount} complete
                 {failedCount > 0 && <>, {failedCount} failed</>}
+                {skippedCount > 0 && <>, {skippedCount} skipped</>}
               </>
             ) : currentTask ? (
               <>
@@ -105,7 +107,10 @@ export function MinimizedUploadWidget() {
                 {currentTask.filename.length > 25 && '...'}
               </>
             ) : (
-              `${completedCount}/${totalCount} complete`
+              <>
+                {completedCount}/{totalCount} complete
+                {skippedCount > 0 && <>, {skippedCount} skipped</>}
+              </>
             )}
           </p>
         </div>

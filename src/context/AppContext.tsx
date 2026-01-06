@@ -924,6 +924,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // If all files are duplicates, don't proceed
       if (uniqueFiles.length === 0) {
         console.log('All files are duplicates, nothing to upload');
+        const skippedNames = duplicateCheck.duplicates
+          .map((d) => d.title || 'Unknown')
+          .slice(0, 5)
+          .join('\n• ');
+        const moreCount = duplicateCheck.duplicates.length - 5;
+        alert(
+          `All ${duplicateCheck.duplicate_count} file${duplicateCheck.duplicate_count > 1 ? 's are' : ' is'} already in your library:\n\n• ${skippedNames}${moreCount > 0 ? `\n• ...and ${moreCount} more` : ''}\n\nNo files were uploaded.`
+        );
         return;
       }
 
