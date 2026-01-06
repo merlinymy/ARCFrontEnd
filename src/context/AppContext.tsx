@@ -109,8 +109,9 @@ type Action =
   | { type: 'UPDATE_MESSAGE_CONTENT'; payload: { conversationId: string; messageId: string; content: string } }
   | { type: 'UPDATE_MESSAGE_CITATIONS'; payload: { conversationId: string; messageId: string; citationChecks: CitationCheck[] } }
   | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; message: Message } }
-  // Web search progress
-  | { type: 'SET_WEB_SEARCH_PROGRESS'; payload: string | null };
+  // Web search actions
+  | { type: 'SET_WEB_SEARCH_PROGRESS'; payload: string | null }
+  | { type: 'APPEND_WEB_SEARCH_CHUNK'; payload: { conversationId: string; messageId: string; chunk: string } };
 
 // Reducer
 function appReducer(state: AppState, action: Action): AppState {
@@ -181,15 +182,17 @@ function appReducer(state: AppState, action: Action): AppState {
         ),
       };
 
-    case 'DELETE_CONVERSATION':
+    case 'DELETE_CONVERSATION': {
+      const filteredConversations = state.conversations.filter((c) => c.id !== action.payload);
       return {
         ...state,
-        conversations: state.conversations.filter((c) => c.id !== action.payload),
+        conversations: filteredConversations,
         activeConversationId:
           state.activeConversationId === action.payload
-            ? state.conversations[0]?.id ?? null
+            ? filteredConversations[0]?.id ?? null
             : state.activeConversationId,
       };
+    }
 
     case 'CLEAR_CONVERSATIONS':
       return { ...state, conversations: [], activeConversationId: null };
@@ -455,6 +458,23 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'SET_WEB_SEARCH_PROGRESS':
       return { ...state, webSearchProgress: action.payload };
 
+    case 'APPEND_WEB_SEARCH_CHUNK':
+      return {
+        ...state,
+        conversations: state.conversations.map((conv) =>
+          conv.id === action.payload.conversationId
+            ? {
+                ...conv,
+                messages: conv.messages.map((msg) =>
+                  msg.id === action.payload.messageId
+                    ? { ...msg, content: msg.content + action.payload.chunk }
+                    : msg
+                ),
+              }
+            : conv
+        ),
+      };
+
     default:
       return state;
   }
@@ -601,7 +621,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Ensure we have an active conversation
     let conversationId = state.activeConversationId;
-    if (!conversationId) {
+
+    // Verify the active conversation actually exists, or create a new one
+    const conversationExists = conversationId && state.conversations.some((c) => c.id === conversationId);
+
+    if (!conversationExists) {
       conversationId = generateId();
       const title = query.slice(0, 50) + (query.length > 50 ? '...' : '');
       const conversation: Conversation = {
@@ -659,6 +683,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       let completedSteps: Set<PipelineStepName> = new Set();
       let streamedContent = '';
+      let streamedWebSearchContent = '';
+      let webSearchMessageId: string | null = null;
       const streamedCitations: CitationCheck[] = [];
 
       // Log query options being sent to API
@@ -701,6 +727,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
             // Skip answer_complete - we already have the content from chunks
             if (stepName === 'answer_complete') {
+              return;
+            }
+
+            // Handle web search streaming chunks
+            if (stepName === 'web_search_chunk' && data?.chunk) {
+              const chunk = data.chunk as string;
+              streamedWebSearchContent += chunk;
+
+              // Create placeholder web search message if it doesn't exist
+              if (!webSearchMessageId) {
+                webSearchMessageId = generateId();
+                const placeholderWebSearchMessage: Message = {
+                  id: webSearchMessageId,
+                  type: 'web_search',
+                  content: '',
+                  timestamp: new Date(),
+                  metadata: {
+                    isWebSearch: true,
+                    webSearchSources: [],
+                  },
+                };
+                dispatch({
+                  type: 'ADD_MESSAGE',
+                  payload: { conversationId: conversationId!, message: placeholderWebSearchMessage },
+                });
+              }
+
+              // Append chunk to web search message
+              dispatch({
+                type: 'APPEND_WEB_SEARCH_CHUNK',
+                payload: { conversationId: conversationId!, messageId: webSearchMessageId, chunk },
+              });
               return;
             }
 
@@ -757,6 +815,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 },
               });
             }
+          } else if (event.type === 'web_search') {
+            // Update web search message with sources
+            if (webSearchMessageId) {
+              // Update existing message with sources
+              dispatch({
+                type: 'UPDATE_MESSAGE',
+                payload: {
+                  conversationId: conversationId!,
+                  message: {
+                    id: webSearchMessageId,
+                    type: 'web_search',
+                    content: streamedWebSearchContent || event.answer,
+                    timestamp: new Date(),
+                    metadata: {
+                      isWebSearch: true,
+                      webSearchSources: event.sources,
+                    },
+                  },
+                },
+              });
+            } else {
+              // Fallback: create message if streaming didn't happen
+              const webSearchMessage: Message = {
+                id: generateId(),
+                type: 'web_search',
+                content: event.answer,
+                timestamp: new Date(),
+                metadata: {
+                  isWebSearch: true,
+                  webSearchSources: event.sources,
+                },
+              };
+              dispatch({
+                type: 'ADD_MESSAGE',
+                payload: { conversationId: conversationId!, message: webSearchMessage },
+              });
+            }
+            // Reset for next query
+            streamedWebSearchContent = '';
+            webSearchMessageId = null;
           } else if (event.type === 'complete') {
             const latency = performance.now() - startTime;
 

@@ -9,6 +9,8 @@ import {
   Filter,
   Tag,
   AlertTriangle,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -110,16 +112,22 @@ function CitationBadge({
   const confidence = check ? Math.round(check.confidence * 100) : null;
 
   const tooltipContent = check ? (
-    <div className="max-w-xs">
-      <div className="font-medium mb-1">
+    <span className="block max-w-xs">
+      <span className="block font-medium mb-1">
         {style.label} ({confidence}% confidence)
-      </div>
-      <div className="text-xs opacity-80">{check.explanation}</div>
-    </div>
+      </span>
+      <span className="block text-xs opacity-80">{check.explanation}</span>
+    </span>
   ) : isChecking ? (
-    <div>Verifying citation...</div>
+    <span className="block">Verifying citation...</span>
   ) : (
-    <div>Citation not verified</div>
+    <span className="block max-w-xs">
+      <span className="block font-medium mb-1">Source {citationId}</span>
+      <span className="block text-xs opacity-80">
+        This citation references Source {citationId} from the retrieved documents.
+        {' '}Enable citation verification in settings to check accuracy.
+      </span>
+    </span>
   );
 
   return (
@@ -274,17 +282,78 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
   const { state } = useApp();
 
   const { metadata } = responseMessage;
+
+  // Check if this is a web search message - do this first!
+  const isWebSearch = responseMessage.type === 'web_search' || metadata?.isWebSearch;
+
+  // Render web search message differently (early return)
+  if (isWebSearch) {
+    const webSearchSources = metadata?.webSearchSources || [];
+    return (
+      <div className="animate-fade-in">
+        {/* Web Search Card */}
+        <div className="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+          <div className="flex items-start gap-3 mb-3">
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-800 rounded-lg">
+              <Globe className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 mb-1">
+                Web Search Results
+              </h4>
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                Additional context from the internet
+              </p>
+            </div>
+          </div>
+
+          <div className="markdown-content">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {responseMessage.content}
+            </ReactMarkdown>
+          </div>
+
+          {/* Web Search Sources */}
+          {webSearchSources.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-emerald-200 dark:border-emerald-800">
+              <h5 className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mb-2">
+                Sources ({webSearchSources.length})
+              </h5>
+              <div className="space-y-2">
+                {webSearchSources.map((source, index) => (
+                  <a
+                    key={index}
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm p-2 rounded-lg bg-white/50 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-800 border border-emerald-100 dark:border-emerald-900 transition-colors group"
+                  >
+                    <ExternalLink className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-emerald-900 dark:text-emerald-100 group-hover:underline truncate">
+                      {source.title}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Regular RAG response - compute all the necessary data
   const citationChecks = metadata?.citationChecks;
 
   // Determine if citation checking is in progress for this message
-  // This is true when streaming is active for this message and citations are being verified
+  // Only show checking animation if citation verification is enabled
   const isCheckingCitations = useMemo(() => {
     if (!state.streamingState) return false;
-    // Check if this is the message being streamed
     if (state.streamingState.messageId !== responseMessage.id) return false;
-    // Check if we're in the verification phase (has content but citations still coming in)
+    // Only show checking animation if citation checking was enabled for this query
+    if (!state.queryOptions.enableCitationCheck) return false;
     return state.streamingState.isStreaming && responseMessage.content.length > 0;
-  }, [state.streamingState, responseMessage.id, responseMessage.content.length]);
+  }, [state.streamingState, responseMessage.id, responseMessage.content.length, state.queryOptions.enableCitationCheck]);
 
   // Sort sources by relevance score (highest first)
   const sources = [...(metadata?.sources ?? [])].sort(

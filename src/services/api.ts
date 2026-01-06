@@ -64,6 +64,23 @@ export interface WebSearchProgressEvent {
   };
 }
 
+// Web search streaming chunk event
+export interface WebSearchChunkEvent {
+  type: 'progress';
+  step: 'web_search_chunk';
+  data: {
+    chunk: string;
+  };
+}
+
+// Web search completion event with answer
+export interface WebSearchCompleteEvent {
+  type: 'web_search';
+  answer: string;
+  sources: Array<{ url: string; title: string }>;
+  question: string;
+}
+
 // New event types for streaming LLM response
 export interface AnswerChunkEvent {
   type: 'progress';
@@ -114,7 +131,7 @@ export interface ErrorEvent {
   message: string;
 }
 
-export type StreamEvent = ProgressEvent | AnswerChunkEvent | AnswerCompleteEvent | CitationVerifiedEvent | WebSearchEvent | WebSearchProgressEvent | CompleteEvent | ErrorEvent;
+export type StreamEvent = ProgressEvent | AnswerChunkEvent | AnswerCompleteEvent | CitationVerifiedEvent | WebSearchEvent | WebSearchProgressEvent | WebSearchChunkEvent | WebSearchCompleteEvent | CompleteEvent | ErrorEvent;
 
 class ApiError extends Error {
   status: number;

@@ -57,7 +57,7 @@ export interface QueryResponse {
 // Message in a conversation
 export interface Message {
   id: string;
-  type: 'query' | 'response';
+  type: 'query' | 'response' | 'web_search';
   content: string;
   timestamp: Date;
   metadata?: {
@@ -71,6 +71,9 @@ export interface Message {
     latency?: number;
     warnings?: string[];
     citationChecks?: CitationCheck[];
+    // Web search specific
+    isWebSearch?: boolean;
+    webSearchSources?: Array<{ url: string; title: string }>;
   };
 }
 

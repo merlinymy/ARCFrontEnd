@@ -38,7 +38,9 @@ export function SourceCard({ source, index }: SourceCardProps) {
   const [copied, setCopied] = useState(false);
   const { setViewingPdf } = useApp();
 
-  const scorePercent = Math.round(source.relevance_score * 100);
+  // Handle sources without relevance_score (e.g., web search sources)
+  const hasRelevanceScore = source.relevance_score !== undefined && source.relevance_score !== null;
+  const scorePercent = hasRelevanceScore ? Math.round(source.relevance_score * 100) : 0;
   const chunkType = (source.chunk_type as ChunkType) || 'section';
 
   const handleCopy = async () => {
@@ -60,15 +62,19 @@ export function SourceCard({ source, index }: SourceCardProps) {
             <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">
               [{index + 1}]
             </span>
-            <div className="mt-1 w-12 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-500 rounded-full transition-all"
-                style={{ width: `${scorePercent}%` }}
-              />
-            </div>
-            <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-              {source.relevance_score.toFixed(2)}
-            </span>
+            {hasRelevanceScore && (
+              <>
+                <div className="mt-1 w-12 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full transition-all"
+                    style={{ width: `${scorePercent}%` }}
+                  />
+                </div>
+                <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                  {source.relevance_score.toFixed(2)}
+                </span>
+              </>
+            )}
           </div>
 
           {/* Content */}

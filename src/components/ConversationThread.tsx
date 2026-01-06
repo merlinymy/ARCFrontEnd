@@ -218,14 +218,31 @@ export function ConversationThread({ onScroll }: ConversationThreadProps) {
     );
   }
 
-  // Group messages into query-response pairs
-  const messagePairs: { query: typeof activeConversation.messages[0]; response: typeof activeConversation.messages[0] | null }[] =
-    [];
-  for (let i = 0; i < activeConversation.messages.length; i += 2) {
-    const query = activeConversation.messages[i];
-    const response = activeConversation.messages[i + 1] ?? null;
-    if (query.type === 'query') {
-      messagePairs.push({ query, response });
+  // Group messages into query and all associated responses (RAG + web search)
+  const messageGroups: {
+    query: typeof activeConversation.messages[0];
+    responses: typeof activeConversation.messages
+  }[] = [];
+
+  let i = 0;
+  while (i < activeConversation.messages.length) {
+    const message = activeConversation.messages[i];
+
+    if (message.type === 'query') {
+      // Found a query, collect all following responses
+      const responses: typeof activeConversation.messages = [];
+      let j = i + 1;
+
+      // Collect all responses (both 'response' and 'web_search' types) until next query or end
+      while (j < activeConversation.messages.length && activeConversation.messages[j].type !== 'query') {
+        responses.push(activeConversation.messages[j]);
+        j++;
+      }
+
+      messageGroups.push({ query: message, responses });
+      i = j; // Move to next query
+    } else {
+      i++; // Skip orphaned response messages (shouldn't happen)
     }
   }
 
@@ -233,10 +250,13 @@ export function ConversationThread({ onScroll }: ConversationThreadProps) {
     <div ref={scrollRef} className="h-full overflow-y-auto p-4 md:p-6">
       {/* Disable scroll anchoring on content so browser doesn't auto-jump */}
       <div className="max-w-4xl mx-auto space-y-8" style={{ overflowAnchor: 'none' }}>
-        {messagePairs.map(({ query, response }) => (
-          <div key={query.id}>
-            {response ? (
-              <ResponseCard queryMessage={query} responseMessage={response} />
+        {messageGroups.map(({ query, responses }) => (
+          <div key={query.id} className="space-y-4">
+            {responses.length > 0 ? (
+              // Render all responses for this query
+              responses.map((response, index) => (
+                <ResponseCard key={response.id} queryMessage={query} responseMessage={response} />
+              ))
             ) : (
               /* Loading state for pending response with pipeline progress */
               <div className="animate-fade-in">
@@ -270,7 +290,7 @@ export function ConversationThread({ onScroll }: ConversationThreadProps) {
         ))}
 
         {/* Show loading state when isLoading but no pending message */}
-        {isLoading && messagePairs.length > 0 && messagePairs[messagePairs.length - 1].response && (
+        {isLoading && messageGroups.length > 0 && messageGroups[messageGroups.length - 1].responses.length > 0 && (
           pipelineProgress ? (
             <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} />
           ) : (
