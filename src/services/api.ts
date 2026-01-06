@@ -973,6 +973,66 @@ export async function updateUserPreferences(
   return handleResponse(response);
 }
 
+// System Prompts API
+export interface SystemPromptsResponse {
+  defaults: {
+    concise: Record<string, string>;
+    detailed: Record<string, string>;
+    addendums: {
+      general_knowledge: string;
+      web_search: string;
+    };
+  };
+  custom: Record<string, Record<string, string>> | null;
+  query_types: string[];
+}
+
+export async function getSystemPrompts(): Promise<SystemPromptsResponse> {
+  const response = await fetch(`${API_BASE}/user/prompts`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function updateSystemPrompt(
+  mode: 'concise' | 'detailed' | 'addendums',
+  promptType: string,
+  content: string
+): Promise<SystemPromptsResponse> {
+  const response = await fetch(`${API_BASE}/user/prompts`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({
+      mode,
+      prompt_type: promptType,
+      content,
+    }),
+  });
+  return handleResponse(response);
+}
+
+export async function resetPrompt(
+  mode: string,
+  promptType: string
+): Promise<{ message: string }> {
+  const response = await fetch(`${API_BASE}/user/prompts/${mode}/${promptType}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function resetAllPrompts(): Promise<{ message: string }> {
+  const response = await fetch(`${API_BASE}/user/prompts`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
 // Export all API functions
 export const api = {
   queryPapers,
@@ -1016,6 +1076,11 @@ export const api = {
   // User Preferences
   getUserPreferences,
   updateUserPreferences,
+  // System Prompts
+  getSystemPrompts,
+  updateSystemPrompt,
+  resetPrompt,
+  resetAllPrompts,
 };
 
 export { ApiError };

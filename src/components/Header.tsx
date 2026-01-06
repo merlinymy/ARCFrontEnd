@@ -1,25 +1,26 @@
 import {
   Sun,
   Moon,
-  Settings,
   Activity,
   Menu,
-  Wifi,
-  WifiOff,
-  Library,
   LogOut,
+  FileText,
+  Settings,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { Tooltip } from './Tooltip';
 
 export function Header() {
   const { state, setTheme, toggleSidebar, setActivePage } = useApp();
   const { logout } = useAuth();
-  const { theme, health, sidebarOpen } = state;
+  const { theme, sidebarOpen } = state;
 
-  const isHealthy = health?.status === 'healthy';
-  const isDegraded = health?.status === 'degraded';
+  // Navigation items with responsive labels
+  const navItems = [
+    { page: 'library' as const, icon: FileText, label: 'Library' },
+    { page: 'prompts' as const, icon: Settings, label: 'Prompts' },
+    { page: 'health' as const, icon: Activity, label: 'Health' },
+  ];
 
   return (
     <header className="h-14 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between px-4 shrink-0">
@@ -43,87 +44,27 @@ export function Header() {
         </div>
       </div>
 
-      {/* Center section - Status indicators */}
-      <div className="flex items-center gap-4">
-        <Tooltip
-          content={
-            isHealthy
-              ? 'All backend services (Qdrant, Voyage AI, Cohere, Anthropic) are operational and responding normally.'
-              : isDegraded
-              ? 'Some services are experiencing issues. The system may have reduced functionality.'
-              : 'Unable to connect to backend services. Check your server connection.'
-          }
-          position="bottom"
-        >
-          <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm cursor-help ${
-              isHealthy
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                : isDegraded
-                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-            }`}
-          >
-            {isHealthy ? (
-              <Wifi className="w-4 h-4" />
-            ) : (
-              <WifiOff className="w-4 h-4" />
-            )}
-            <span className="hidden sm:inline">
-              {isHealthy ? 'Connected' : isDegraded ? 'Degraded' : 'Disconnected'}
-            </span>
-          </div>
-        </Tooltip>
-
-        {state.stats && (
-          <Tooltip
-            content="Total number of document chunks indexed in the vector database. Each chunk represents a searchable segment of your research papers."
-            position="bottom"
-          >
-            <div className="hidden md:flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 cursor-help">
-              <span>{state.stats.total_vectors.toLocaleString()} vectors</span>
-            </div>
-          </Tooltip>
-        )}
-      </div>
-
-      {/* Right section */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setActivePage('library')}
-          className={`p-2 rounded-lg transition-colors ${
-            state.activePage === 'library'
-              ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-              : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
-          }`}
-          aria-label="Paper Library"
-        >
-          <Library className="w-5 h-5" />
-        </button>
-
-        <button
-          onClick={() => setActivePage('analytics')}
-          className={`p-2 rounded-lg transition-colors ${
-            state.activePage === 'analytics'
-              ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-              : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
-          }`}
-          aria-label="Analytics"
-        >
-          <Activity className="w-5 h-5" />
-        </button>
-
-        <button
-          onClick={() => setActivePage('settings')}
-          className={`p-2 rounded-lg transition-colors ${
-            state.activePage === 'settings'
-              ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-              : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
-          }`}
-          aria-label="Settings"
-        >
-          <Settings className="w-5 h-5" />
-        </button>
+      {/* Right section - Navigation */}
+      <div className="flex items-center gap-1">
+        {navItems.map(({ page, icon: Icon, label }) => {
+          const isActive = state.activePage === page;
+          return (
+            <button
+              key={page}
+              onClick={() => setActivePage(page)}
+              className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors text-sm ${
+                isActive
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
+              }`}
+              aria-label={label}
+            >
+              {/* xl+: icon + label, lg: label only, <lg: icon only */}
+              <Icon className="w-5 h-5 lg:hidden xl:block" />
+              <span className="hidden lg:inline">{label}</span>
+            </button>
+          );
+        })}
 
         <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
 

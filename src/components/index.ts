@@ -6,8 +6,6 @@ export { SourceCard } from './SourceCard';
 export { ResponseCard } from './ResponseCard';
 export { ConversationThread } from './ConversationThread';
 export { ChatPage } from './ChatPage';
-export { AnalyticsDashboard } from './AnalyticsDashboard';
-export { SettingsPage } from './SettingsPage';
 export { HealthStatusPanel } from './HealthStatusPanel';
 export { PaperDetailModal } from './PaperDetailModal';
 export { PipelineVisualization } from './PipelineVisualization';

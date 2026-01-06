@@ -4,9 +4,6 @@ import {
   FileText,
   Trash2,
   ChevronRight,
-  Database,
-  Clock,
-  BarChart2,
   X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -46,7 +43,7 @@ function groupConversationsByDate(conversations: Conversation[]): Record<string,
 
 export function Sidebar() {
   const { state, createNewConversation, setActivePage, toggleSidebar, selectConversation, deleteConversation } = useApp();
-  const { conversations, activeConversationId, activePage, stats } = state;
+  const { conversations, activeConversationId, activePage } = state;
 
   const groupedConversations = groupConversationsByDate(conversations);
 
@@ -176,44 +173,6 @@ export function Sidebar() {
             </div>
           ) : null;
         })()}
-      </div>
-
-      {/* Quick Stats */}
-      <div className="border-t border-gray-200 dark:border-gray-700 p-4">
-        <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-          Quick Stats
-        </div>
-        <div className="space-y-2 text-sm">
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <Database className="w-4 h-4" />
-            <span>{stats?.total_vectors?.toLocaleString() ?? 0} chunks indexed</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <MessageSquare className="w-4 h-4" />
-            <span>{conversations.length} conversations</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <Clock className="w-4 h-4" />
-            <span>{stats?.conversation_stats?.turns ?? 0} queries this session</span>
-          </div>
-          {stats?.cache_stats && (
-            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <BarChart2 className="w-4 h-4" />
-              <span>
-                {Math.round(
-                  ((stats.cache_stats.embedding_cache?.hits ?? 0) /
-                    Math.max(
-                      1,
-                      (stats.cache_stats.embedding_cache?.hits ?? 0) +
-                        (stats.cache_stats.embedding_cache?.misses ?? 0)
-                    )) *
-                    100
-                )}
-                % cache hit rate
-              </span>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Minimized Upload Widget */}

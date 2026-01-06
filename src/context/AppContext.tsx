@@ -67,7 +67,7 @@ type Action =
   | { type: 'SET_THEME'; payload: 'light' | 'dark' }
   | { type: 'TOGGLE_SIDEBAR' }
   | { type: 'SET_SIDEBAR_OPEN'; payload: boolean }
-  | { type: 'SET_ACTIVE_PAGE'; payload: 'chat' | 'analytics' | 'settings' | 'library' }
+  | { type: 'SET_ACTIVE_PAGE'; payload: 'chat' | 'library' | 'prompts' | 'health' }
   | { type: 'SET_CURRENT_QUERY'; payload: string }
   | { type: 'SET_QUERY_OPTIONS'; payload: Partial<QueryOptions> }
   | { type: 'LOAD_QUERY_OPTIONS'; payload: QueryOptions }
@@ -467,7 +467,7 @@ interface AppContextValue {
   // Convenience actions
   setTheme: (theme: 'light' | 'dark') => void;
   toggleSidebar: () => void;
-  setActivePage: (page: 'chat' | 'analytics' | 'settings' | 'library') => void;
+  setActivePage: (page: 'chat' | 'library' | 'prompts' | 'health') => void;
   createNewConversation: () => string;
   submitQuery: (query: string) => Promise<void>;
   clearConversation: () => Promise<void>;
@@ -575,7 +575,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'TOGGLE_SIDEBAR' });
   }, []);
 
-  const setActivePage = useCallback((page: 'chat' | 'analytics' | 'settings' | 'library') => {
+  const setActivePage = useCallback((page: 'chat' | 'library' | 'prompts' | 'health') => {
     dispatch({ type: 'SET_ACTIVE_PAGE', payload: page });
   }, []);
 

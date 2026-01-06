@@ -8,7 +8,7 @@ import {
   Shield,
   Loader2,
   Trash2,
-  FileText,
+  AlignLeft,
   BookOpen,
   Globe,
   Search,
@@ -140,7 +140,7 @@ export function QueryInput() {
                       : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:border-blue-400'
                   }`}
                 >
-                  <FileText className="w-4 h-4" />
+                  <AlignLeft className="w-4 h-4" />
                   Concise
                 </button>
                 <button
@@ -189,7 +189,7 @@ export function QueryInput() {
               <div>
                 <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Results (Top-K)
-                  <InfoTooltip content="Number of document chunks to retrieve. Higher values provide more context but may include less relevant results. Recommended: 10-20 for focused queries, 30+ for comprehensive research." />
+                  <InfoTooltip content="Number of source chunks to include in the final response after reranking. Controls how many sources are cited. Recommended: 10-15 for focused answers, 20-30 for comprehensive coverage." />
                 </label>
                 <select
                   value={queryOptions.topK}

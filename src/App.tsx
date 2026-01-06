@@ -1,6 +1,7 @@
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Layout, ChatPage, AnalyticsDashboard, SettingsPage, LibraryPage, PdfViewer, LoginPage } from './components';
+import { Layout, ChatPage, LibraryPage, PdfViewer, LoginPage, HealthStatusPanel } from './components';
+import { PromptsPage } from './components/PromptsPage';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
@@ -10,9 +11,9 @@ function AppContent() {
   return (
     <Layout>
       {activePage === 'chat' && <ChatPage />}
-      {activePage === 'analytics' && <AnalyticsDashboard />}
-      {activePage === 'settings' && <SettingsPage />}
       {activePage === 'library' && <LibraryPage />}
+      {activePage === 'prompts' && <PromptsPage />}
+      {activePage === 'health' && <HealthStatusPanel />}
 
       {/* Global PDF Viewer - works from any page */}
       {viewingPdfId && <PdfViewer paperId={viewingPdfId} />}

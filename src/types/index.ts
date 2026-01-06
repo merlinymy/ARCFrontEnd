@@ -415,7 +415,7 @@ export interface AppState {
   sidebarOpen: boolean;
   theme: 'light' | 'dark';
   pipelineExpanded: boolean;
-  activePage: 'chat' | 'analytics' | 'settings' | 'library';
+  activePage: 'chat' | 'library' | 'prompts' | 'health';
   selectedPaperId: string | null;
   viewingPdfId: string | null;
   webSearchProgress: string | null; // Current web search progress message
@@ -443,4 +443,46 @@ export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
   responseMode: 'detailed',
   enableGeneralKnowledge: true,
   enableWebSearch: false,
+};
+
+// System prompts types for customization
+export interface SystemPromptsData {
+  defaults: {
+    concise: Record<string, string>;
+    detailed: Record<string, string>;
+    addendums: {
+      general_knowledge: string;
+      web_search: string;
+    };
+  };
+  custom: {
+    concise?: Record<string, string>;
+    detailed?: Record<string, string>;
+    addendums?: {
+      general_knowledge?: string;
+      web_search?: string;
+    };
+  } | null;
+  query_types: string[];
+}
+
+// Prompt mode for editing
+export type PromptMode = 'concise' | 'detailed' | 'addendums';
+
+// Query type labels for UI display
+export const QUERY_TYPE_LABELS: Record<string, string> = {
+  factual: 'Factual',
+  framing: 'Framing',
+  methods: 'Methods',
+  summary: 'Summary',
+  comparative: 'Comparative',
+  novelty: 'Novelty',
+  limitations: 'Limitations',
+  general: 'General',
+};
+
+// Addendum labels for UI display
+export const ADDENDUM_LABELS: Record<string, string> = {
+  general_knowledge: 'General Knowledge',
+  web_search: 'Web Search',
 };
