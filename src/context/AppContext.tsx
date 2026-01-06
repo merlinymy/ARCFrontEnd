@@ -1026,13 +1026,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Fetch full conversation with messages
     try {
       const fullConv = await api.getConversation(id);
-      const messages: Message[] = (fullConv.messages || []).map((msg) => ({
-        id: String(msg.id),
-        type: msg.role === 'user' ? 'query' : 'response',
-        content: msg.content,
-        timestamp: new Date(msg.created_at),
-        metadata: msg.metadata as Message['metadata'],
-      }));
+      const messages: Message[] = (fullConv.messages || []).map((msg) => {
+        // Determine message type from metadata or role
+        let messageType: 'query' | 'response' | 'web_search' = 'response';
+        if (msg.role === 'user') {
+          messageType = 'query';
+        } else if (msg.metadata?.message_type === 'web_search') {
+          messageType = 'web_search';
+        }
+
+        return {
+          id: String(msg.id),
+          type: messageType,
+          content: msg.content,
+          timestamp: new Date(msg.created_at),
+          metadata: {
+            ...msg.metadata,
+            isWebSearch: messageType === 'web_search',
+            webSearchSources: messageType === 'web_search' ? msg.metadata?.sources : undefined,
+          } as Message['metadata'],
+        };
+      });
       dispatch({ type: 'SET_CONVERSATION_MESSAGES', payload: { id, messages } });
     } catch (error) {
       console.error('Failed to load conversation messages:', error);
