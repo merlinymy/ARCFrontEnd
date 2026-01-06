@@ -1,11 +1,8 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Sparkles, Check, Loader2, SkipForward, AlertTriangle, Globe } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { ResponseCard } from './ResponseCard';
 import type { PipelineStepInfo } from '../types';
-
-// Threshold in pixels - if user is within this distance from bottom, auto-scroll
-const SCROLL_THRESHOLD = 150;
 
 // Pipeline step status icon
 function StepIcon({ status }: { status: PipelineStepInfo['status'] }) {
@@ -121,52 +118,75 @@ export function ConversationThread() {
   const { state } = useApp();
   const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState, webSearchProgress } = state;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isNearBottomRef = useRef(true);
-  const lastMessageCountRef = useRef(0);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [isAnchorVisible, setIsAnchorVisible] = useState(true);
 
   const activeConversation = conversations.find(
     (c) => c.id === activeConversationId
   );
 
-  // Check if user is near bottom of scroll container
-  const checkIfNearBottom = useCallback(() => {
-    if (!scrollRef.current) return true;
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD;
+  // Use Intersection Observer to track if anchor is visible
+  useEffect(() => {
+    const anchor = anchorRef.current;
+    const container = scrollRef.current;
+    if (!anchor || !container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Anchor is visible = user is at/near bottom
+        setIsAnchorVisible(entries[0].isIntersecting);
+      },
+      {
+        root: container,
+        threshold: 0,
+        rootMargin: '0px 0px 150px 0px', // 150px buffer at bottom
+      }
+    );
+
+    observer.observe(anchor);
+    return () => observer.disconnect();
   }, []);
 
-  // Track scroll position to know if user scrolled up
+  // Track manual scroll to detect user intent
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
 
+    let lastScrollTop = container.scrollTop;
+
     const handleScroll = () => {
-      isNearBottomRef.current = checkIfNearBottom();
+      const currentScrollTop = container.scrollTop;
+      const scrollingUp = currentScrollTop < lastScrollTop;
+
+      // User scrolled up = they want to stay where they are
+      if (scrollingUp) {
+        setIsAtBottom(false);
+      }
+      // User scrolled down to where anchor is visible = re-enable auto-scroll
+      else if (isAnchorVisible) {
+        setIsAtBottom(true);
+      }
+
+      lastScrollTop = currentScrollTop;
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [checkIfNearBottom]);
+  }, [isAnchorVisible]);
 
-  // Auto-scroll only when a new message is added (not during streaming content updates)
+  // Reset state when conversation changes
   useEffect(() => {
-    const messageCount = activeConversation?.messages.length ?? 0;
-    const isNewMessage = messageCount > lastMessageCountRef.current;
-    lastMessageCountRef.current = messageCount;
+    setIsAtBottom(true);
+    setIsAnchorVisible(true);
+  }, [activeConversationId]);
 
-    // Only scroll to bottom if user was already near bottom
-    // This allows users to scroll up freely during generation
-    if (isNewMessage && isNearBottomRef.current && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [activeConversation?.messages.length]);
-
-  // During streaming, only scroll if user was already near bottom
+  // Auto-scroll only when: streaming, user is at bottom, but anchor scrolled out of view
   useEffect(() => {
-    if (streamingState?.isStreaming && isNearBottomRef.current && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (streamingState?.isStreaming && isAtBottom && !isAnchorVisible && anchorRef.current) {
+      anchorRef.current.scrollIntoView({ behavior: 'instant', block: 'end' });
     }
-  }, [streamingState?.content]);
+  }, [streamingState?.content, isAtBottom, isAnchorVisible]);
 
   // Empty state
   if (!activeConversation || activeConversation.messages.length === 0) {
@@ -201,7 +221,8 @@ export function ConversationThread() {
 
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="max-w-4xl mx-auto space-y-8">
+      {/* Disable scroll anchoring on content so browser doesn't auto-jump */}
+      <div className="max-w-4xl mx-auto space-y-8" style={{ overflowAnchor: 'none' }}>
         {messagePairs.map(({ query, response }) => (
           <div key={query.id}>
             {response ? (
@@ -254,6 +275,8 @@ export function ConversationThread() {
           )
         )}
       </div>
+      {/* Scroll anchor - used by Intersection Observer to detect if user is at bottom */}
+      <div ref={anchorRef} style={{ height: '1px', overflowAnchor: 'auto' }} />
     </div>
   );
 }
