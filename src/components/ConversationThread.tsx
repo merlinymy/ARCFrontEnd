@@ -154,10 +154,10 @@ export function ConversationThread() {
     const isNewMessage = messageCount > lastMessageCountRef.current;
     lastMessageCountRef.current = messageCount;
 
-    // Always scroll to bottom when a new message is added
-    if (isNewMessage && scrollRef.current) {
+    // Only scroll to bottom if user was already near bottom
+    // This allows users to scroll up freely during generation
+    if (isNewMessage && isNearBottomRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      isNearBottomRef.current = true;
     }
   }, [activeConversation?.messages.length]);
 
