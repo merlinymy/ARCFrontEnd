@@ -167,8 +167,12 @@ function processTextWithCitations(
   checkMap: Map<number, CitationCheck>,
   isCheckingCitations: boolean = false
 ): React.ReactNode[] {
-  // Pattern to match [Source N], [Source N, M], [N], etc.
-  const citationPattern = /\[(?:Source\s*)?(\d+(?:\s*,\s*\d+)*)\]/gi;
+  // Pattern to match various citation formats:
+  // - [Source 8, Source 9, Source 10] - multiple sources with "Source" prefix
+  // - [Source 8] - single source with "Source" prefix
+  // - [8, 9, 10] - multiple numbers
+  // - [8] - single number
+  const citationPattern = /\[((?:Source\s*)?\d+(?:\s*,\s*(?:Source\s*)?\d+)*)\]/gi;
 
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
@@ -181,8 +185,14 @@ function processTextWithCitations(
       parts.push(text.slice(lastIndex, match.index));
     }
 
-    // Parse citation IDs (handles "1, 2, 3" format)
-    const ids = match[1].split(',').map((s) => parseInt(s.trim(), 10));
+    // Parse citation IDs - extract all numbers from the match
+    // This handles "Source 8, Source 9" and "8, 9" formats
+    const numberPattern = /\d+/g;
+    const ids: number[] = [];
+    let numMatch;
+    while ((numMatch = numberPattern.exec(match[1])) !== null) {
+      ids.push(parseInt(numMatch[0], 10));
+    }
 
     // Add citation badges
     ids.forEach((id, idx) => {

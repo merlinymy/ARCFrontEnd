@@ -8,6 +8,10 @@ import {
   Shield,
   Loader2,
   Trash2,
+  FileText,
+  BookOpen,
+  Globe,
+  Search,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { InfoTooltip } from './Tooltip';
@@ -45,6 +49,8 @@ export function QueryInput() {
 
   const handleSubmit = () => {
     if (currentQuery.trim() && !isLoading) {
+      // Auto-collapse advanced options on submit
+      setShowAdvanced(false);
       submitQuery(currentQuery);
     }
   };
@@ -117,7 +123,43 @@ export function QueryInput() {
         {/* Advanced options panel */}
         {showAdvanced && (
           <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
-            {/* Query Type */}
+            {/* Response Mode - FIRST */}
+            <div className="mb-4">
+              <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Response Mode
+                <InfoTooltip content="Control the detail level of responses. Concise gives brief, focused answers. Detailed provides comprehensive explanations with more context and depth." />
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() =>
+                    dispatch({ type: 'SET_QUERY_OPTIONS', payload: { responseMode: 'concise' } })
+                  }
+                  className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
+                    queryOptions.responseMode === 'concise'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                  }`}
+                >
+                  <FileText className="w-4 h-4" />
+                  Concise
+                </button>
+                <button
+                  onClick={() =>
+                    dispatch({ type: 'SET_QUERY_OPTIONS', payload: { responseMode: 'detailed' } })
+                  }
+                  className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
+                    queryOptions.responseMode === 'detailed'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  Detailed
+                </button>
+              </div>
+            </div>
+
+            {/* Query Type - SECOND */}
             <div className="mb-4">
               <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Query Type
@@ -278,6 +320,63 @@ export function QueryInput() {
                     <span className="text-sm text-gray-700 dark:text-gray-300">Citation Check</span>
                   </label>
                   <InfoTooltip content="Verifies that claims in the generated answer are supported by the source documents. Reduces hallucinations and improves trustworthiness." />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={queryOptions.enableGeneralKnowledge}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        // If turning OFF general knowledge, also turn OFF web search
+                        if (!enabled) {
+                          dispatch({
+                            type: 'SET_QUERY_OPTIONS',
+                            payload: { enableGeneralKnowledge: false, enableWebSearch: false },
+                          });
+                        } else {
+                          dispatch({
+                            type: 'SET_QUERY_OPTIONS',
+                            payload: { enableGeneralKnowledge: true },
+                          });
+                        }
+                      }}
+                      className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
+                    />
+                    <Globe className="w-4 h-4 text-cyan-500" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">General Knowledge</span>
+                  </label>
+                  <InfoTooltip content="Allow the AI to supplement answers with general scientific knowledge beyond your uploaded papers. Responses will clearly separate RAG-sourced content from general knowledge." />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={queryOptions.enableWebSearch}
+                      disabled={!queryOptions.enableGeneralKnowledge}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        // If turning ON web search, also ensure general knowledge is ON
+                        if (enabled) {
+                          dispatch({
+                            type: 'SET_QUERY_OPTIONS',
+                            payload: { enableWebSearch: true, enableGeneralKnowledge: true },
+                          });
+                        } else {
+                          dispatch({
+                            type: 'SET_QUERY_OPTIONS',
+                            payload: { enableWebSearch: false },
+                          });
+                        }
+                      }}
+                      className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                    <Search className={`w-4 h-4 ${queryOptions.enableGeneralKnowledge ? 'text-blue-500' : 'text-gray-400'}`} />
+                    <span className={`text-sm ${queryOptions.enableGeneralKnowledge ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>Web Search</span>
+                  </label>
+                  <InfoTooltip content="Allow Claude to search the web for additional context. Requires General Knowledge to be enabled. Web results will appear in the General Knowledge section." />
                 </div>
               </div>
             </div>

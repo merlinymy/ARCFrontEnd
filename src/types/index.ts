@@ -49,6 +49,9 @@ export interface QueryResponse {
   reranked_count: number;
   warnings: string[];
   citation_checks: CitationCheck[];
+  response_mode: ResponseMode;
+  used_general_knowledge: boolean;
+  used_web_search: boolean;
 }
 
 // Message in a conversation
@@ -205,6 +208,9 @@ export interface DeleteResponse {
   message: string;
 }
 
+// Response mode for detail level
+export type ResponseMode = 'concise' | 'detailed';
+
 // Query options for advanced settings
 export interface QueryOptions {
   queryType: QueryType | 'auto';
@@ -216,6 +222,9 @@ export interface QueryOptions {
   enableExpansion: boolean;
   enableCitationCheck: boolean;
   maxChunksPerPaper: number | 'auto'; // 'auto' lets system decide based on context
+  responseMode: ResponseMode; // 'concise' for brief, 'detailed' for comprehensive
+  enableGeneralKnowledge: boolean; // Allow LLM general knowledge beyond RAG sources
+  enableWebSearch: boolean; // Allow Claude to search the web
 }
 
 // Health status for services
@@ -331,7 +340,9 @@ export type PipelineStepName =
   | 'answer_chunk'
   | 'answer_complete'
   | 'citation_verified'
-  | 'verification';
+  | 'verification'
+  | 'web_search'
+  | 'web_search_progress';
 
 // Streaming citation verification result
 export interface StreamingCitationCheck {
@@ -363,6 +374,7 @@ export const PIPELINE_STEPS: Array<{ name: PipelineStepName; label: string; desc
   { name: 'reranking', label: 'Reranking', description: 'Ranking by relevance' },
   { name: 'generation', label: 'Generation', description: 'Creating answer' },
   { name: 'verification', label: 'Verification', description: 'Checking citations' },
+  { name: 'web_search', label: 'Web Search', description: 'Searching the web for additional context' },
 ];
 
 // Streaming state for progressive response building
@@ -406,6 +418,7 @@ export interface AppState {
   activePage: 'chat' | 'analytics' | 'settings' | 'library';
   selectedPaperId: string | null;
   viewingPdfId: string | null;
+  webSearchProgress: string | null; // Current web search progress message
 
   // Batch upload
   activeBatchUpload: BatchUpload | null;
@@ -427,4 +440,7 @@ export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
   enableExpansion: true,
   enableCitationCheck: true,
   maxChunksPerPaper: 'auto',
+  responseMode: 'detailed',
+  enableGeneralKnowledge: true,
+  enableWebSearch: false,
 };

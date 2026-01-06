@@ -45,7 +45,7 @@ function groupConversationsByDate(conversations: Conversation[]): Record<string,
 }
 
 export function Sidebar() {
-  const { state, dispatch, createNewConversation, setActivePage, toggleSidebar, selectConversation } = useApp();
+  const { state, dispatch, createNewConversation, setActivePage, toggleSidebar, selectConversation, deleteConversation } = useApp();
   const { conversations, activeConversationId, activePage, stats } = state;
 
   const groupedConversations = groupConversationsByDate(conversations);
@@ -129,7 +129,7 @@ export function Sidebar() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      dispatch({ type: 'DELETE_CONVERSATION', payload: conv.id });
+                      deleteConversation(conv.id);
                     }}
                     className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-all"
                   >

@@ -23,7 +23,7 @@ import type {
   CitationCheck,
 } from '../types';
 import { DEFAULT_QUERY_OPTIONS, PIPELINE_STEPS } from '../types';
-import { api, queryPapersStream, type StreamEvent } from '../services/api';
+import { api, queryPapersStream, getUserPreferences, updateUserPreferences, type StreamEvent } from '../services/api';
 
 // Generate unique ID
 const generateId = () => crypto.randomUUID();
@@ -53,6 +53,7 @@ const initialState: AppState = {
   activePage: 'chat',
   selectedPaperId: null,
   viewingPdfId: null,
+  webSearchProgress: null,
   // Batch upload
   activeBatchUpload: null,
   isUploadPanelOpen: false,
@@ -69,6 +70,7 @@ type Action =
   | { type: 'SET_ACTIVE_PAGE'; payload: 'chat' | 'analytics' | 'settings' | 'library' }
   | { type: 'SET_CURRENT_QUERY'; payload: string }
   | { type: 'SET_QUERY_OPTIONS'; payload: Partial<QueryOptions> }
+  | { type: 'LOAD_QUERY_OPTIONS'; payload: QueryOptions }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_HEALTH'; payload: HealthStatus | null }
   | { type: 'SET_STATS'; payload: StatsResponse | null }
@@ -106,7 +108,9 @@ type Action =
   | { type: 'STOP_STREAMING' }
   | { type: 'UPDATE_MESSAGE_CONTENT'; payload: { conversationId: string; messageId: string; content: string } }
   | { type: 'UPDATE_MESSAGE_CITATIONS'; payload: { conversationId: string; messageId: string; citationChecks: CitationCheck[] } }
-  | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; message: Message } };
+  | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; message: Message } }
+  // Web search progress
+  | { type: 'SET_WEB_SEARCH_PROGRESS'; payload: string | null };
 
 // Reducer
 function appReducer(state: AppState, action: Action): AppState {
@@ -129,6 +133,9 @@ function appReducer(state: AppState, action: Action): AppState {
 
     case 'SET_QUERY_OPTIONS':
       return { ...state, queryOptions: { ...state.queryOptions, ...action.payload } };
+
+    case 'LOAD_QUERY_OPTIONS':
+      return { ...state, queryOptions: action.payload };
 
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload };
@@ -191,7 +198,8 @@ function appReducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         conversations: action.payload,
-        activeConversationId: action.payload.length > 0 ? action.payload[0].id : null,
+        // Don't auto-select first conversation - landing page should show empty chat
+        activeConversationId: null,
       };
 
     case 'SET_CONVERSATION_MESSAGES':
@@ -444,6 +452,9 @@ function appReducer(state: AppState, action: Action): AppState {
         ),
       };
 
+    case 'SET_WEB_SEARCH_PROGRESS':
+      return { ...state, webSearchProgress: action.payload };
+
     default:
       return state;
   }
@@ -460,6 +471,7 @@ interface AppContextValue {
   createNewConversation: () => string;
   submitQuery: (query: string) => Promise<void>;
   clearConversation: () => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<void>;
   refreshHealth: () => Promise<void>;
   refreshStats: () => Promise<void>;
   // Conversation actions
@@ -495,6 +507,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [state.theme]);
 
+  // Load user preferences on mount
+  useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const prefs = await getUserPreferences();
+        console.log('[Preferences] Loaded from server:', prefs);
+        dispatch({
+          type: 'LOAD_QUERY_OPTIONS',
+          payload: {
+            queryType: (prefs.query_type as QueryType | 'auto') || 'auto',
+            topK: prefs.top_k,
+            temperature: prefs.temperature,
+            paperFilter: [],
+            sectionFilter: null,
+            maxChunksPerPaper: prefs.max_chunks_per_paper ?? 'auto',
+            responseMode: prefs.response_mode,
+            enableHyde: prefs.enable_hyde,
+            enableExpansion: prefs.enable_expansion,
+            enableCitationCheck: prefs.enable_citation_check,
+            enableGeneralKnowledge: prefs.enable_general_knowledge,
+            enableWebSearch: prefs.enable_web_search,
+          },
+        });
+      } catch (error) {
+        console.log('[Preferences] Failed to load (user may not be authenticated):', error);
+        // Silently fail - user preferences will use defaults
+      }
+    };
+    loadPreferences();
+  }, []);
+
+  // Save preferences when they change (debounced)
+  useEffect(() => {
+    const savePreferences = async () => {
+      try {
+        await updateUserPreferences({
+          query_type: state.queryOptions.queryType,
+          top_k: state.queryOptions.topK,
+          temperature: state.queryOptions.temperature,
+          max_chunks_per_paper: state.queryOptions.maxChunksPerPaper === 'auto' ? null : state.queryOptions.maxChunksPerPaper,
+          response_mode: state.queryOptions.responseMode,
+          enable_hyde: state.queryOptions.enableHyde,
+          enable_expansion: state.queryOptions.enableExpansion,
+          enable_citation_check: state.queryOptions.enableCitationCheck,
+          enable_general_knowledge: state.queryOptions.enableGeneralKnowledge,
+          enable_web_search: state.queryOptions.enableWebSearch,
+        });
+        console.log('[Preferences] Saved to server');
+      } catch (error) {
+        // Silently fail - preferences will be saved next time
+        console.log('[Preferences] Failed to save:', error);
+      }
+    };
+
+    // Debounce saves to avoid too many requests
+    const timeoutId = setTimeout(savePreferences, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [state.queryOptions]);
+
   // Convenience actions
   const setTheme = useCallback((theme: 'light' | 'dark') => {
     dispatch({ type: 'SET_THEME', payload: theme });
@@ -509,16 +580,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const createNewConversation = useCallback(() => {
-    const id = generateId();
-    const conversation: Conversation = {
-      id,
-      title: 'New Conversation',
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    dispatch({ type: 'CREATE_CONVERSATION', payload: conversation });
-    return id;
+    // Just clear the active conversation to show empty chat
+    // Actual conversation will be created when user sends first message
+    dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: null });
+    return '';
   }, []);
 
   const submitQuery = useCallback(async (query: string) => {
@@ -538,14 +603,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let conversationId = state.activeConversationId;
     if (!conversationId) {
       conversationId = generateId();
+      const title = query.slice(0, 50) + (query.length > 50 ? '...' : '');
       const conversation: Conversation = {
         id: conversationId,
-        title: query.slice(0, 50) + (query.length > 50 ? '...' : ''),
+        title,
         messages: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       };
       dispatch({ type: 'CREATE_CONVERSATION', payload: conversation });
+
+      // Persist new conversation to backend
+      try {
+        await api.createConversation(conversationId, title);
+      } catch (error) {
+        console.error('Failed to create conversation in backend:', error);
+        // Continue anyway - conversation exists locally
+      }
     }
 
     // Add query message
@@ -587,6 +661,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let streamedContent = '';
       const streamedCitations: CitationCheck[] = [];
 
+      // Log query options being sent to API
+      console.log('[Query] Submitting with options:', {
+        responseMode: state.queryOptions.responseMode,
+        enableGeneralKnowledge: state.queryOptions.enableGeneralKnowledge,
+        enableWebSearch: state.queryOptions.enableWebSearch,
+        queryType: state.queryOptions.queryType,
+      });
+
       await queryPapersStream(
         query,
         (event: StreamEvent) => {
@@ -620,6 +702,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // Skip answer_complete - we already have the content from chunks
             if (stepName === 'answer_complete') {
               return;
+            }
+
+            // Handle web search progress messages
+            if (stepName === 'web_search_progress' && data?.message) {
+              dispatch({ type: 'SET_WEB_SEARCH_PROGRESS', payload: data.message as string });
+              return;
+            }
+
+            // Clear web search progress when web search completes
+            if (stepName === 'web_search' && data?.status === 'complete') {
+              dispatch({ type: 'SET_WEB_SEARCH_PROGRESS', payload: null });
             }
 
             // Mark this step as active and previous steps as completed
@@ -725,6 +818,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           enableHyde: state.queryOptions.enableHyde,
           enableExpansion: state.queryOptions.enableExpansion,
           enableCitationCheck: state.queryOptions.enableCitationCheck,
+          responseMode: state.queryOptions.responseMode,
+          enableGeneralKnowledge: state.queryOptions.enableGeneralKnowledge,
+          enableWebSearch: state.queryOptions.enableWebSearch,
         }
       );
     } catch (error) {
@@ -764,6 +860,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       console.error('Failed to clear conversation:', error);
     }
   }, [state.activeConversationId]);
+
+  const deleteConversation = useCallback(async (conversationId: string) => {
+    try {
+      await api.deleteConversation(conversationId);
+      dispatch({ type: 'DELETE_CONVERSATION', payload: conversationId });
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+    }
+  }, []);
 
   const refreshHealth = useCallback(async () => {
     try {
@@ -1161,6 +1266,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     createNewConversation,
     submitQuery,
     clearConversation,
+    deleteConversation,
     refreshHealth,
     refreshStats,
     refreshConversations,

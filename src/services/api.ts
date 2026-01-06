@@ -37,12 +37,31 @@ export type PipelineStep =
   | 'answer_chunk'
   | 'answer_complete'
   | 'citation_verified'
-  | 'verification';
+  | 'verification'
+  | 'web_search'
+  | 'web_search_progress';
 
 export interface ProgressEvent {
   type: 'progress';
   step: PipelineStep;
   data: Record<string, unknown>;
+}
+
+// Web search progress events
+export interface WebSearchEvent {
+  type: 'progress';
+  step: 'web_search';
+  data: {
+    status: 'starting' | 'complete';
+  };
+}
+
+export interface WebSearchProgressEvent {
+  type: 'progress';
+  step: 'web_search_progress';
+  data: {
+    message: string;
+  };
 }
 
 // New event types for streaming LLM response
@@ -85,6 +104,9 @@ export interface CompleteEvent {
   reranked_count: number;
   warnings: string[];
   citation_checks: QueryResponse['citation_checks'];
+  response_mode: 'concise' | 'detailed';
+  used_general_knowledge: boolean;
+  used_web_search: boolean;
 }
 
 export interface ErrorEvent {
@@ -92,7 +114,7 @@ export interface ErrorEvent {
   message: string;
 }
 
-export type StreamEvent = ProgressEvent | AnswerChunkEvent | AnswerCompleteEvent | CitationVerifiedEvent | CompleteEvent | ErrorEvent;
+export type StreamEvent = ProgressEvent | AnswerChunkEvent | AnswerCompleteEvent | CitationVerifiedEvent | WebSearchEvent | WebSearchProgressEvent | CompleteEvent | ErrorEvent;
 
 class ApiError extends Error {
   status: number;
@@ -138,6 +160,9 @@ export async function queryPapers(
     enableHyde?: boolean;
     enableExpansion?: boolean;
     enableCitationCheck?: boolean;
+    responseMode?: 'concise' | 'detailed';
+    enableGeneralKnowledge?: boolean;
+    enableWebSearch?: boolean;
   }
 ): Promise<QueryResponse & { latency?: number }> {
   const startTime = performance.now();
@@ -159,6 +184,9 @@ export async function queryPapers(
       enable_hyde: options?.enableHyde ?? null,
       enable_expansion: options?.enableExpansion ?? null,
       enable_citation_check: options?.enableCitationCheck ?? null,
+      response_mode: options?.responseMode ?? 'detailed',
+      enable_general_knowledge: options?.enableGeneralKnowledge ?? true,
+      enable_web_search: options?.enableWebSearch ?? false,
     }),
   });
 
@@ -183,26 +211,41 @@ export async function queryPapersStream(
     enableHyde?: boolean;
     enableExpansion?: boolean;
     enableCitationCheck?: boolean;
+    responseMode?: 'concise' | 'detailed';
+    enableGeneralKnowledge?: boolean;
+    enableWebSearch?: boolean;
   }
 ): Promise<void> {
+  const requestBody = {
+    question,
+    top_k: options?.topK ?? 10,
+    temperature: options?.temperature ?? 0.7,
+    paper_ids: options?.paperIds?.length ? options.paperIds : null,
+    max_chunks_per_paper: options?.maxChunksPerPaper === 'auto' ? null : options?.maxChunksPerPaper,
+    conversation_id: options?.conversationId ?? null,
+    query_type: options?.queryType === 'auto' ? null : options?.queryType ?? null,
+    enable_hyde: options?.enableHyde ?? null,
+    enable_expansion: options?.enableExpansion ?? null,
+    enable_citation_check: options?.enableCitationCheck ?? null,
+    response_mode: options?.responseMode ?? 'detailed',
+    enable_general_knowledge: options?.enableGeneralKnowledge ?? true,
+    enable_web_search: options?.enableWebSearch ?? false,
+  };
+
+  // Log the request body for debugging
+  console.log('[API] queryPapersStream request body:', {
+    response_mode: requestBody.response_mode,
+    enable_general_knowledge: requestBody.enable_general_knowledge,
+    enable_web_search: requestBody.enable_web_search,
+  });
+
   const response = await fetch(`${API_BASE}/query/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
     },
-    body: JSON.stringify({
-      question,
-      top_k: options?.topK ?? 10,
-      temperature: options?.temperature ?? 0.7,
-      paper_ids: options?.paperIds?.length ? options.paperIds : null,
-      max_chunks_per_paper: options?.maxChunksPerPaper === 'auto' ? null : options?.maxChunksPerPaper,
-      conversation_id: options?.conversationId ?? null,
-      query_type: options?.queryType === 'auto' ? null : options?.queryType ?? null,
-      enable_hyde: options?.enableHyde ?? null,
-      enable_expansion: options?.enableExpansion ?? null,
-      enable_citation_check: options?.enableCitationCheck ?? null,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -892,6 +935,44 @@ export async function getMemoryContext(): Promise<{ context: string }> {
   return handleResponse(response);
 }
 
+// =============================================================================
+// User Preferences
+// =============================================================================
+
+export interface UserPreferencesResponse {
+  query_type: string;
+  top_k: number;
+  temperature: number;
+  max_chunks_per_paper: number | null;
+  response_mode: 'concise' | 'detailed';
+  enable_hyde: boolean;
+  enable_expansion: boolean;
+  enable_citation_check: boolean;
+  enable_general_knowledge: boolean;
+  enable_web_search: boolean;
+}
+
+export async function getUserPreferences(): Promise<UserPreferencesResponse> {
+  const response = await fetch(`${API_BASE}/user/preferences`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function updateUserPreferences(
+  preferences: Partial<UserPreferencesResponse>
+): Promise<UserPreferencesResponse> {
+  const response = await fetch(`${API_BASE}/user/preferences`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(preferences),
+  });
+  return handleResponse(response);
+}
+
 // Export all API functions
 export const api = {
   queryPapers,
@@ -932,6 +1013,9 @@ export const api = {
   addMemory,
   deleteMemory,
   getMemoryContext,
+  // User Preferences
+  getUserPreferences,
+  updateUserPreferences,
 };
 
 export { ApiError };

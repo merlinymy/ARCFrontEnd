@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { MessageSquare, Sparkles, Check, Loader2, SkipForward, AlertTriangle } from 'lucide-react';
+import { MessageSquare, Sparkles, Check, Loader2, SkipForward, AlertTriangle, Globe } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { ResponseCard } from './ResponseCard';
 import type { PipelineStepInfo } from '../types';
@@ -24,13 +24,28 @@ function StepIcon({ status }: { status: PipelineStepInfo['status'] }) {
 }
 
 // Pipeline progress display component
-function PipelineProgress({ steps }: { steps: PipelineStepInfo[] }) {
+function PipelineProgress({ steps, webSearchProgress }: { steps: PipelineStepInfo[]; webSearchProgress?: string | null }) {
   const activeStep = steps.find((s) => s.status === 'active');
 
   return (
     <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
+      {/* Web search progress indicator */}
+      {webSearchProgress && (
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20 -mx-4 -mt-4 px-4 pt-4 rounded-t-xl">
+          <Globe className="w-5 h-5 text-blue-500 animate-pulse" />
+          <div className="flex-1">
+            <div className="font-medium text-blue-700 dark:text-blue-300">
+              Searching the web...
+            </div>
+            <div className="text-sm text-blue-600 dark:text-blue-400 truncate">
+              {webSearchProgress}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Current step indicator */}
-      {activeStep && (
+      {activeStep && !webSearchProgress && (
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
           <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
           <div>
@@ -104,7 +119,7 @@ function PipelineProgress({ steps }: { steps: PipelineStepInfo[] }) {
 
 export function ConversationThread() {
   const { state } = useApp();
-  const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState } = state;
+  const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState, webSearchProgress } = state;
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
   const lastMessageCountRef = useRef(0);
@@ -207,7 +222,7 @@ export function ConversationThread() {
 
                 {/* Pipeline progress or simple loading */}
                 {pipelineProgress ? (
-                  <PipelineProgress steps={pipelineProgress} />
+                  <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} />
                 ) : (
                   <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
                     <div className="flex items-center gap-3">
@@ -226,7 +241,7 @@ export function ConversationThread() {
         {/* Show loading state when isLoading but no pending message */}
         {isLoading && messagePairs.length > 0 && messagePairs[messagePairs.length - 1].response && (
           pipelineProgress ? (
-            <PipelineProgress steps={pipelineProgress} />
+            <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} />
           ) : (
             <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
               <div className="flex items-center gap-3">
