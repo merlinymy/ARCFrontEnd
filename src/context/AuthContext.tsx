@@ -1,5 +1,8 @@
 import { createContext, useContext, useReducer, useEffect, useCallback, type ReactNode } from 'react';
 
+// API Base URL
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+
 // Types
 interface User {
   id: number;
@@ -80,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const response = await fetch('/api/auth/me', {
+        const response = await fetch(`${API_BASE}/auth/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -108,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'CLEAR_ERROR' });
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -126,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(TOKEN_KEY, access_token);
 
       // Get user info
-      const userResponse = await fetch('/api/auth/me', {
+      const userResponse = await fetch(`${API_BASE}/auth/me`, {
         headers: {
           Authorization: `Bearer ${access_token}`,
         },
