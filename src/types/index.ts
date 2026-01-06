@@ -345,7 +345,8 @@ export type PipelineStepName =
   | 'citation_verified'
   | 'verification'
   | 'web_search'
-  | 'web_search_progress';
+  | 'web_search_progress'
+  | 'web_search_chunk';
 
 // Streaming citation verification result
 export interface StreamingCitationCheck {

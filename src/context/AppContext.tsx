@@ -646,6 +646,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // At this point, conversationId is guaranteed to be a string
+    // (either from state or newly generated)
+    if (!conversationId) {
+      throw new Error('Failed to establish conversation ID');
+    }
+
     // Add query message
     const queryMessage: Message = {
       id: generateId(),

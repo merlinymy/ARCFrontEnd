@@ -254,7 +254,7 @@ export function ConversationThread({ onScroll }: ConversationThreadProps) {
           <div key={query.id} className="space-y-4">
             {responses.length > 0 ? (
               // Render all responses for this query
-              responses.map((response, index) => (
+              responses.map((response) => (
                 <ResponseCard key={response.id} queryMessage={query} responseMessage={response} />
               ))
             ) : (
