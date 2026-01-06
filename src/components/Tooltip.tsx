@@ -18,8 +18,8 @@ export function Tooltip({
 }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [adjustedPosition, setAdjustedPosition] = useState(position);
-  const tooltipRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const containerRef = useRef<HTMLSpanElement>(null);
 
   // Reset position when tooltip closes
   useEffect(() => {
@@ -79,7 +79,7 @@ export function Tooltip({
   };
 
   return (
-    <div
+    <span
       ref={containerRef}
       className="relative inline-flex items-center"
       onMouseEnter={() => setIsVisible(true)}
@@ -98,21 +98,21 @@ export function Tooltip({
       )}
 
       {isVisible && (
-        <div
+        <span
           ref={tooltipRef}
           className={`absolute z-50 ${positionClasses[adjustedPosition]} pointer-events-none`}
         >
-          <div className="relative">
-            <div className="px-3 py-1.5 text-xs leading-relaxed text-white bg-gray-800 dark:bg-gray-700 rounded-lg shadow-lg min-w-48 max-w-sm whitespace-normal">
+          <span className="relative block">
+            <span className="block px-3 py-1.5 text-xs leading-relaxed text-white bg-gray-800 dark:bg-gray-700 rounded-lg shadow-lg min-w-48 max-w-sm whitespace-normal">
               {content}
-            </div>
-            <div
+            </span>
+            <span
               className={`absolute w-0 h-0 border-4 ${arrowClasses[adjustedPosition]}`}
             />
-          </div>
-        </div>
+          </span>
+        </span>
       )}
-    </div>
+    </span>
   );
 }
 
