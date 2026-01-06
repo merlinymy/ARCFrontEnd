@@ -10,7 +10,7 @@ type SortOrder = 'asc' | 'desc';
 type ViewMode = 'grid' | 'list';
 
 export function LibraryPage() {
-  const { state, dispatch, refreshPapers, loadMorePapers, setActivePage, createNewConversation, openUploadPanel } = useApp();
+  const { state, dispatch, loadMorePapers, setActivePage, createNewConversation, openUploadPanel } = useApp();
   const { papers, totalPapers, hasMorePapers, isLoadingMorePapers } = state;
 
   const [searchQuery, setSearchQuery] = useState('');

@@ -10,7 +10,6 @@ import type {
   BatchUploadInitResponse,
   BatchStatusResponse,
   BatchUploadSSEEvent,
-  UploadTask,
 } from '../types';
 import { getAuthToken } from '../context/AuthContext';
 
