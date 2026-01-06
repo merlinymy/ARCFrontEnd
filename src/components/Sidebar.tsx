@@ -45,7 +45,7 @@ function groupConversationsByDate(conversations: Conversation[]): Record<string,
 }
 
 export function Sidebar() {
-  const { state, dispatch, createNewConversation, setActivePage, toggleSidebar, selectConversation, deleteConversation } = useApp();
+  const { state, createNewConversation, setActivePage, toggleSidebar, selectConversation, deleteConversation } = useApp();
   const { conversations, activeConversationId, activePage, stats } = state;
 
   const groupedConversations = groupConversationsByDate(conversations);
