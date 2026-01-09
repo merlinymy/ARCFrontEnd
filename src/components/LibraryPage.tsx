@@ -5,6 +5,7 @@ import { PaperCard } from './PaperCard';
 import { BatchUploadPanel } from './BatchUploadPanel';
 import { InfoTooltip } from './Tooltip';
 import { searchPapers, type PaperSearchResult, getPapers } from '../services/api';
+import type { Paper } from '../types';
 
 type SortField = 'title' | 'year' | 'chunkCount' | 'relevance' | 'uploadDate';
 type SortOrder = 'asc' | 'desc';
