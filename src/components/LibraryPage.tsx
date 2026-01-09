@@ -248,7 +248,7 @@ export function LibraryPage() {
   }, [searchQuery, performSemanticSearch]);
 
   // Convert semantic results to Paper-like objects for display
-  const semanticPapers = useMemo(() => {
+  const semanticPapers = useMemo((): Paper[] => {
     return semanticResults.map((r) => ({
       id: r.id,
       title: r.title,
@@ -260,12 +260,14 @@ export function LibraryPage() {
       chunkStats: {},
       status: r.status as 'indexed' | 'indexing' | 'error' | 'pending',
       pdfUrl: r.pdfUrl,
+      fileSizeBytes: r.fileSizeBytes,
+      // Extra properties for preview (not in Paper interface but TypeScript allows them)
       relevanceScore: r.relevanceScore,
       previewText: r.previewText,
       previewSection: r.previewSection,
       previewSubsection: r.previewSubsection,
       previewChunkType: r.previewChunkType,
-    }));
+    } as Paper));
   }, [semanticResults]);
 
   // Filter and sort papers
