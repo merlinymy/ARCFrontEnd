@@ -27,6 +27,7 @@ interface SystemPromptsResponse {
     addendums: {
       general_knowledge: string;
       web_search: string;
+      pdf_upload: string;
     };
   };
   custom: Record<string, Record<string, string>> | null;
@@ -210,7 +211,7 @@ export function PromptsPage() {
   // Get list of prompts for current tab
   const getPromptList = (): string[] => {
     if (activeTab === 'addendums') {
-      return ['general_knowledge', 'web_search'];
+      return ['general_knowledge', 'web_search', 'pdf_upload'];
     }
     return promptsData?.query_types || [];
   };
@@ -345,6 +346,7 @@ export function PromptsPage() {
                   {activeTab === 'concise' && 'Brief prompt for concise responses'}
                   {activeTab === 'addendums' && selectedPrompt === 'general_knowledge' && 'Appended when general knowledge is enabled'}
                   {activeTab === 'addendums' && selectedPrompt === 'web_search' && 'Used for web search functionality'}
+                  {activeTab === 'addendums' && selectedPrompt === 'pdf_upload' && 'Appended when PDF upload is enabled - guides Claude on using both full PDFs and RAG chunks'}
                 </p>
               </div>
               <div className="flex items-center gap-2">

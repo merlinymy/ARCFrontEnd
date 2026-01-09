@@ -92,6 +92,7 @@ export interface Paper {
   title: string;
   authors: string[];
   year?: number;
+  doi?: string;
   filename: string;
   pageCount: number;
   indexedAt?: Date;
@@ -101,6 +102,7 @@ export interface Paper {
   errorMessage?: string;
   pdfUrl: string;
   progress?: number;
+  fileSizeBytes: number;
 }
 
 // Paper list response from API with pagination
@@ -228,6 +230,7 @@ export interface QueryOptions {
   responseMode: ResponseMode; // 'concise' for brief, 'detailed' for comprehensive
   enableGeneralKnowledge: boolean; // Allow LLM general knowledge beyond RAG sources
   enableWebSearch: boolean; // Allow Claude to search the web
+  enablePdfUpload: boolean; // Send actual PDF files to Claude (32MB limit, 100 pages max)
 }
 
 // Health status for services
@@ -391,6 +394,15 @@ export interface StreamingState {
 }
 
 // App state
+export type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+export interface ToastMessage {
+  id: string;
+  type: ToastType;
+  message: string;
+  duration?: number;
+}
+
 export interface AppState {
   // Conversations
   conversations: Conversation[];
@@ -423,6 +435,7 @@ export interface AppState {
   selectedPaperId: string | null;
   viewingPdfId: string | null;
   webSearchProgress: string | null; // Current web search progress message
+  toasts: ToastMessage[]; // Toast notifications
 
   // Batch upload
   activeBatchUpload: BatchUpload | null;
@@ -447,6 +460,7 @@ export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
   responseMode: 'detailed',
   enableGeneralKnowledge: true,
   enableWebSearch: false,
+  enablePdfUpload: false,
 };
 
 // System prompts types for customization
@@ -489,4 +503,5 @@ export const QUERY_TYPE_LABELS: Record<string, string> = {
 export const ADDENDUM_LABELS: Record<string, string> = {
   general_knowledge: 'General Knowledge',
   web_search: 'Web Search',
+  pdf_upload: 'PDF Upload',
 };

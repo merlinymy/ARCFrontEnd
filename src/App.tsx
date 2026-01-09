@@ -2,22 +2,28 @@ import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout, ChatPage, LibraryPage, PdfViewer, LoginPage, HealthStatusPanel } from './components';
 import { PromptsPage } from './components/PromptsPage';
+import { ToastContainer } from './components/Toast';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
-  const { state } = useApp();
+  const { state, removeToast } = useApp();
   const { activePage, viewingPdfId } = state;
 
   return (
-    <Layout>
-      {activePage === 'chat' && <ChatPage />}
-      {activePage === 'library' && <LibraryPage />}
-      {activePage === 'prompts' && <PromptsPage />}
-      {activePage === 'health' && <HealthStatusPanel />}
+    <>
+      <Layout>
+        {activePage === 'chat' && <ChatPage />}
+        {activePage === 'library' && <LibraryPage />}
+        {activePage === 'prompts' && <PromptsPage />}
+        {activePage === 'health' && <HealthStatusPanel />}
 
-      {/* Global PDF Viewer - works from any page */}
-      {viewingPdfId && <PdfViewer paperId={viewingPdfId} />}
-    </Layout>
+        {/* Global PDF Viewer - works from any page */}
+        {viewingPdfId && <PdfViewer paperId={viewingPdfId} />}
+      </Layout>
+
+      {/* Toast Notifications */}
+      <ToastContainer toasts={state.toasts} onClose={removeToast} />
+    </>
   );
 }
 

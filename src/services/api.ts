@@ -231,6 +231,7 @@ export async function queryPapersStream(
     responseMode?: 'concise' | 'detailed';
     enableGeneralKnowledge?: boolean;
     enableWebSearch?: boolean;
+    enablePdfUpload?: boolean;
   }
 ): Promise<void> {
   const requestBody = {
@@ -247,6 +248,7 @@ export async function queryPapersStream(
     response_mode: options?.responseMode ?? 'detailed',
     enable_general_knowledge: options?.enableGeneralKnowledge ?? true,
     enable_web_search: options?.enableWebSearch ?? false,
+    enable_pdf_upload: options?.enablePdfUpload ?? false,
   };
 
   // Log the request body for debugging
@@ -359,6 +361,7 @@ function apiPaperToPaper(apiPaper: {
   status: string;
   error_message?: string;
   pdf_url: string;
+  file_size_bytes?: number;
 }): Paper {
   return {
     id: apiPaper.paper_id,
@@ -373,18 +376,31 @@ function apiPaperToPaper(apiPaper: {
     status: apiPaper.status as Paper['status'],
     errorMessage: apiPaper.error_message,
     pdfUrl: apiPaper.pdf_url,
+    fileSizeBytes: apiPaper.file_size_bytes || 0,
   };
 }
 
-// Get papers with pagination
+// Get papers with pagination, filtering, and sorting
 export async function getPapers(
   offset: number = 0,
-  limit: number = 50
+  limit: number = 50,
+  search?: string,
+  sortBy?: string,
+  sortOrder?: string
 ): Promise<PaperListResponse> {
   const params = new URLSearchParams({
     offset: offset.toString(),
     limit: limit.toString(),
   });
+  if (search && search.trim()) {
+    params.append('search', search.trim());
+  }
+  if (sortBy) {
+    params.append('sort_by', sortBy);
+  }
+  if (sortOrder) {
+    params.append('sort_order', sortOrder);
+  }
   const response = await fetch(`${API_BASE}/papers?${params}`);
   const data = await handleResponse<{
     papers: Array<{
@@ -450,6 +466,41 @@ export async function deletePaper(paperId: string): Promise<DeleteResponse> {
   return handleResponse<DeleteResponse>(response);
 }
 
+// Update paper metadata
+export async function updatePaperMetadata(
+  paperId: string,
+  updates: {
+    title?: string;
+    authors?: string[];
+    year?: number;
+    filename?: string;
+  }
+): Promise<Paper> {
+  const response = await fetch(`${API_BASE}/papers/${paperId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  });
+  const data = await handleResponse<{
+    paper_id: string;
+    title: string;
+    authors: string[];
+    year?: number;
+    filename: string;
+    page_count: number;
+    chunk_count: number;
+    chunk_stats: Record<string, number>;
+    indexed_at?: string;
+    status: string;
+    error_message?: string;
+    pdf_url: string;
+  }>(response);
+
+  return apiPaperToPaper(data);
+}
+
 // Search result type
 export interface PaperSearchResult {
   id: string;
@@ -461,6 +512,7 @@ export interface PaperSearchResult {
   chunkCount: number;
   status: string;
   pdfUrl: string;
+  fileSizeBytes: number;
   // Preview of best matching chunk
   previewText?: string;
   previewSection?: string;
@@ -491,6 +543,7 @@ export async function searchPapers(
       chunk_count: number;
       status: string;
       pdf_url: string;
+      file_size_bytes?: number;
       preview_text?: string;
       preview_section?: string;
       preview_subsection?: string;
@@ -512,6 +565,7 @@ export async function searchPapers(
       chunkCount: r.chunk_count,
       status: r.status,
       pdfUrl: r.pdf_url,
+      fileSizeBytes: r.file_size_bytes || 0,
       previewText: r.preview_text,
       previewSection: r.preview_section,
       previewSubsection: r.preview_subsection,
@@ -967,6 +1021,7 @@ export interface UserPreferencesResponse {
   enable_citation_check: boolean;
   enable_general_knowledge: boolean;
   enable_web_search: boolean;
+  enable_pdf_upload: boolean;
 }
 
 export async function getUserPreferences(): Promise<UserPreferencesResponse> {
@@ -998,6 +1053,7 @@ export interface SystemPromptsResponse {
     addendums: {
       general_knowledge: string;
       web_search: string;
+      pdf_upload: string;
     };
   };
   custom: Record<string, Record<string, string>> | null;

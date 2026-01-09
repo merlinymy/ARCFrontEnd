@@ -21,6 +21,7 @@ import type {
   UploadTask,
   BatchUploadSSEEvent,
   CitationCheck,
+  ToastMessage,
 } from '../types';
 import { DEFAULT_QUERY_OPTIONS, PIPELINE_STEPS } from '../types';
 import { api, queryPapersStream, getUserPreferences, updateUserPreferences, type StreamEvent } from '../services/api';
@@ -60,6 +61,8 @@ const initialState: AppState = {
   isUploadPanelMinimized: false,
   // Streaming state
   streamingState: null,
+  // Toast notifications
+  toasts: [],
 };
 
 // Action types
@@ -111,7 +114,10 @@ type Action =
   | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; message: Message } }
   // Web search actions
   | { type: 'SET_WEB_SEARCH_PROGRESS'; payload: string | null }
-  | { type: 'APPEND_WEB_SEARCH_CHUNK'; payload: { conversationId: string; messageId: string; chunk: string } };
+  | { type: 'APPEND_WEB_SEARCH_CHUNK'; payload: { conversationId: string; messageId: string; chunk: string } }
+  // Toast actions
+  | { type: 'ADD_TOAST'; payload: Omit<ToastMessage, 'id'> }
+  | { type: 'REMOVE_TOAST'; payload: string };
 
 // Reducer
 function appReducer(state: AppState, action: Action): AppState {
@@ -475,6 +481,18 @@ function appReducer(state: AppState, action: Action): AppState {
         ),
       };
 
+    case 'ADD_TOAST':
+      return {
+        ...state,
+        toasts: [...state.toasts, { ...action.payload, id: generateId() }],
+      };
+
+    case 'REMOVE_TOAST':
+      return {
+        ...state,
+        toasts: state.toasts.filter((t) => t.id !== action.payload),
+      };
+
     default:
       return state;
   }
@@ -501,6 +519,7 @@ interface AppContextValue {
   refreshPapers: () => Promise<void>;
   loadMorePapers: () => Promise<void>;
   deletePaper: (paperId: string) => Promise<void>;
+  updatePaper: (paperId: string, updates: Partial<Paper>) => void;
   setViewingPdf: (paperId: string | null) => void;
   // Batch upload actions
   startBatchUpload: (files: File[]) => Promise<void>;
@@ -510,6 +529,9 @@ interface AppContextValue {
   closeUploadPanel: () => void;
   minimizeUploadPanel: () => void;
   maximizeUploadPanel: () => void;
+  // Toast actions
+  showToast: (toast: Omit<ToastMessage, 'id'>) => void;
+  removeToast: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -548,6 +570,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             enableCitationCheck: prefs.enable_citation_check,
             enableGeneralKnowledge: prefs.enable_general_knowledge,
             enableWebSearch: prefs.enable_web_search,
+            enablePdfUpload: prefs.enable_pdf_upload ?? false,
           },
         });
       } catch (error) {
@@ -573,6 +596,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           enable_citation_check: state.queryOptions.enableCitationCheck,
           enable_general_knowledge: state.queryOptions.enableGeneralKnowledge,
           enable_web_search: state.queryOptions.enableWebSearch,
+          enable_pdf_upload: state.queryOptions.enablePdfUpload,
         });
         console.log('[Preferences] Saved to server');
       } catch (error) {
@@ -925,6 +949,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           responseMode: state.queryOptions.responseMode,
           enableGeneralKnowledge: state.queryOptions.enableGeneralKnowledge,
           enableWebSearch: state.queryOptions.enableWebSearch,
+          enablePdfUpload: state.queryOptions.enablePdfUpload,
         }
       );
     } catch (error) {
@@ -1102,6 +1127,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshStats]);
 
+  const updatePaperAction = useCallback((paperId: string, updates: Partial<Paper>) => {
+    dispatch({ type: 'UPDATE_PAPER', payload: { id: paperId, updates } });
+  }, []);
+
   const setViewingPdf = useCallback((paperId: string | null) => {
     dispatch({ type: 'SET_VIEWING_PDF', payload: paperId });
   }, []);
@@ -1191,6 +1220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           status: 'pending',
           pdfUrl: '',
           progress: 0,
+          fileSizeBytes: 0,
         };
         dispatch({ type: 'ADD_PAPER', payload: pendingPaper });
       }
@@ -1367,6 +1397,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_UPLOAD_PANEL_MINIMIZED', payload: false });
   }, []);
 
+  // Toast actions
+  const showToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
+    dispatch({ type: 'ADD_TOAST', payload: toast });
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+    dispatch({ type: 'REMOVE_TOAST', payload: id });
+  }, []);
+
   // Initial data load - run once when site opens
   useEffect(() => {
     refreshHealth();
@@ -1392,6 +1431,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshPapers,
     loadMorePapers,
     deletePaper: deletePaperAction,
+    updatePaper: updatePaperAction,
     setViewingPdf,
     // Batch upload
     startBatchUpload,
@@ -1401,6 +1441,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     closeUploadPanel,
     minimizeUploadPanel,
     maximizeUploadPanel,
+    // Toast
+    showToast,
+    removeToast,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
