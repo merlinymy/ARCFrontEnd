@@ -1042,13 +1042,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const selectConversation = useCallback(async (id: string) => {
     dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: id });
 
-    // Check if messages are already loaded
-    const conv = state.conversations.find((c) => c.id === id);
-    if (conv && conv.messages.length > 0) {
-      return; // Already loaded
-    }
-
-    // Fetch full conversation with messages
+    // Always fetch fresh messages from server to ensure we have the latest
+    // (removes stale cache issue where messages saved after frontend closed aren't loaded)
     try {
       const fullConv = await api.getConversation(id);
       const messages: Message[] = (fullConv.messages || []).map((msg) => {
