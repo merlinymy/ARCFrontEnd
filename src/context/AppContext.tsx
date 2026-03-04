@@ -1146,9 +1146,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const sseStreamRef = useRef<{ ready: Promise<void>; close: () => void } | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Shared SSE event handler
-  const handleBatchSSEEvent = useCallback((event: BatchUploadSSEEvent) => {
-    console.log('[SSE]', event.type, event.status, event.currentStep, event.progressPercent);
+  // Event queue to space out rapid SSE events so React renders each step
+  const eventQueueRef = useRef<BatchUploadSSEEvent[]>([]);
+  const processingEventsRef = useRef(false);
+
+  // Direct event dispatcher (processes a single event immediately)
+  const dispatchSSEEvent = useCallback((event: BatchUploadSSEEvent) => {
+    console.log('[SSE] dispatch', event.type, event.status, event.currentStep, event.progressPercent);
     if (event.type === 'task_progress' && event.taskId) {
       dispatch({
         type: 'UPDATE_UPLOAD_TASK',
@@ -1219,6 +1223,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [refreshPapers, refreshStats]);
+
+  // Ref to always access latest dispatchSSEEvent without stale closures
+  const dispatchSSEEventRef = useRef(dispatchSSEEvent);
+  dispatchSSEEventRef.current = dispatchSSEEvent;
+
+  const processEventQueue = useCallback(() => {
+    if (processingEventsRef.current) return;
+    processingEventsRef.current = true;
+
+    const processNext = () => {
+      const event = eventQueueRef.current.shift();
+      if (!event) {
+        processingEventsRef.current = false;
+        return;
+      }
+      dispatchSSEEventRef.current(event);
+      // If more events are queued, process after a short delay
+      // so React can paint each intermediate state
+      if (eventQueueRef.current.length > 0) {
+        requestAnimationFrame(() => setTimeout(processNext, 80));
+      } else {
+        processingEventsRef.current = false;
+      }
+    };
+
+    processNext();
+  }, []);
+
+  // Shared SSE event handler — queues events and spaces them out
+  // so React renders each intermediate step instead of batching to final state
+  const handleBatchSSEEvent = useCallback((event: BatchUploadSSEEvent) => {
+    console.log('[SSE] queued', event.type, event.status, event.currentStep, event.progressPercent);
+    eventQueueRef.current.push(event);
+    processEventQueue();
+  }, [processEventQueue]);
 
   // Helper: upload tasks in parallel and start processing
   const uploadAndProcess = useCallback(async (
