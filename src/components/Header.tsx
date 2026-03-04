@@ -6,12 +6,13 @@ import {
   FileText,
   Settings,
   Menu,
+  Upload,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 
 export function Header() {
-  const { state, setTheme, setActivePage, toggleSidebar } = useApp();
+  const { state, setTheme, setActivePage, toggleSidebar, openUploadPanel } = useApp();
   const { logout } = useAuth();
   const { theme } = state;
 
@@ -57,6 +58,15 @@ export function Header() {
             </button>
           );
         })}
+
+        <button
+          onClick={openUploadPanel}
+          className="flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 text-sm"
+          aria-label="Upload"
+        >
+          <Upload className="w-5 h-5 lg:hidden xl:block" />
+          <span className="hidden lg:inline">Upload</span>
+        </button>
 
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

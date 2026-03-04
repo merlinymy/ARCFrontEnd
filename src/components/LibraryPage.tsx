@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Search, Upload, Grid, List, SortAsc, SortDesc, FileText, Loader2, MessageSquare, X, Filter, FileUp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { PaperCard } from './PaperCard';
-import { BatchUploadPanel } from './BatchUploadPanel';
+
 import { InfoTooltip } from './Tooltip';
 import { searchPapers, type PaperSearchResult, getPapers } from '../services/api';
 import type { Paper } from '../types';
@@ -677,8 +677,6 @@ export function LibraryPage() {
         </div>
       )}
 
-      {/* Batch Upload Panel */}
-      <BatchUploadPanel />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   useReducer,
   useCallback,
   useEffect,
+  useRef,
   type ReactNode,
 } from 'react';
 import type {
@@ -100,6 +101,7 @@ type Action =
   // Batch upload actions
   | { type: 'START_BATCH_UPLOAD'; payload: BatchUpload }
   | { type: 'UPDATE_UPLOAD_TASK'; payload: { taskId: string; updates: Partial<UploadTask> } }
+  | { type: 'ADD_BATCH_TASKS'; payload: UploadTask[] }
   | { type: 'SET_UPLOAD_PANEL_OPEN'; payload: boolean }
   | { type: 'SET_UPLOAD_PANEL_MINIMIZED'; payload: boolean }
   | { type: 'CANCEL_UPLOAD_TASK'; payload: string }
@@ -302,6 +304,16 @@ function appReducer(state: AppState, action: Action): AppState {
               ? { ...task, ...action.payload.updates }
               : task
           ),
+        },
+      };
+
+    case 'ADD_BATCH_TASKS':
+      if (!state.activeBatchUpload) return state;
+      return {
+        ...state,
+        activeBatchUpload: {
+          ...state.activeBatchUpload,
+          tasks: [...state.activeBatchUpload.tasks, ...action.payload],
         },
       };
 
@@ -1130,45 +1142,233 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_VIEWING_PDF', payload: paperId });
   }, []);
 
-  // Batch upload actions
-  const startBatchUpload = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
-    if (files.length > 20) {
-      console.error('Maximum 20 files per batch');
-      return;
+  // SSE stream ref to track connection state
+  const sseStreamRef = useRef<{ close: () => void } | null>(null);
+
+  // Shared SSE event handler
+  const handleBatchSSEEvent = useCallback((event: BatchUploadSSEEvent) => {
+    if (event.type === 'task_progress' && event.taskId) {
+      dispatch({
+        type: 'UPDATE_UPLOAD_TASK',
+        payload: {
+          taskId: event.taskId,
+          updates: {
+            status: (event.status as UploadTask['status']) || 'processing',
+            currentStep: event.currentStep,
+            progressPercent: event.progressPercent || 0,
+            paperId: event.paperId,
+          },
+        },
+      });
+
+      dispatch({
+        type: 'UPDATE_PAPER',
+        payload: {
+          id: event.taskId,
+          updates: {
+            status: 'indexing',
+            progress: event.progressPercent,
+          },
+        },
+      });
+    } else if (event.type === 'task_complete' && event.taskId) {
+      dispatch({
+        type: 'UPDATE_UPLOAD_TASK',
+        payload: {
+          taskId: event.taskId,
+          updates: {
+            status: 'complete',
+            progressPercent: 100,
+            paperId: event.paperId,
+          },
+        },
+      });
+
+      refreshPapers();
+    } else if (event.type === 'task_error' && event.taskId) {
+      dispatch({
+        type: 'UPDATE_UPLOAD_TASK',
+        payload: {
+          taskId: event.taskId,
+          updates: {
+            status: 'error',
+            errorMessage: event.errorMessage,
+          },
+        },
+      });
+
+      dispatch({
+        type: 'UPDATE_PAPER',
+        payload: {
+          id: event.taskId,
+          updates: {
+            status: 'error',
+            errorMessage: event.errorMessage,
+          },
+        },
+      });
+    } else if (event.type === 'batch_complete') {
+      refreshPapers();
+      refreshStats();
+      sseStreamRef.current = null;
+    }
+  }, [refreshPapers, refreshStats]);
+
+  // Helper: upload tasks in parallel and start processing
+  const uploadAndProcess = useCallback(async (
+    batchId: string,
+    tasks: Array<UploadTask & { file?: File }>
+  ) => {
+    const concurrency = 2;
+
+    for (let i = 0; i < tasks.length; i += concurrency) {
+      const chunk = tasks.slice(i, i + concurrency);
+      const chunkPromises = chunk.map(async (task) => {
+        if (!task.file) return;
+
+        dispatch({
+          type: 'UPDATE_UPLOAD_TASK',
+          payload: {
+            taskId: task.taskId,
+            updates: { status: 'uploading' },
+          },
+        });
+
+        try {
+          await api.uploadBatchFile(batchId, task.taskId, task.file);
+        } catch (error) {
+          console.error(`Failed to upload ${task.filename}:`, error);
+          dispatch({
+            type: 'UPDATE_UPLOAD_TASK',
+            payload: {
+              taskId: task.taskId,
+              updates: {
+                status: 'error',
+                errorMessage: error instanceof Error ? error.message : 'Upload failed',
+              },
+            },
+          });
+        }
+      });
+
+      await Promise.all(chunkPromises);
     }
 
-    try {
-      // Step 1: Compute file hashes to check for duplicates
-      console.log(`Computing hashes for ${files.length} files...`);
-      const fileHashes = await Promise.all(
-        files.map(async (file) => ({
-          file,
-          hash: await api.computeFileHash(file),
-        }))
+    await api.startBatchProcessing(batchId);
+  }, []);
+
+  // Helper: deduplicate files and return unique ones
+  const deduplicateFiles = useCallback(async (files: File[]) => {
+    console.log(`Computing hashes for ${files.length} files...`);
+    const fileHashes = await Promise.all(
+      files.map(async (file) => ({
+        file,
+        hash: await api.computeFileHash(file),
+      }))
+    );
+
+    const hashes = fileHashes.map((fh) => fh.hash);
+    const duplicateCheck = await api.checkDuplicates(hashes);
+
+    const duplicateHashes = new Set(duplicateCheck.duplicates.map((d) => d.hash));
+    const uniqueFiles = fileHashes
+      .filter((fh) => !duplicateHashes.has(fh.hash))
+      .map((fh) => fh.file);
+
+    if (duplicateCheck.duplicate_count > 0) {
+      const skippedNames = duplicateCheck.duplicates
+        .map((d) => d.title || 'Unknown')
+        .join(', ');
+      console.log(
+        `Skipped ${duplicateCheck.duplicate_count} duplicate(s): ${skippedNames}`
       );
+    }
 
-      // Step 2: Check which hashes already exist
-      const hashes = fileHashes.map((fh) => fh.hash);
-      const duplicateCheck = await api.checkDuplicates(hashes);
+    return { uniqueFiles, duplicateCheck };
+  }, []);
 
-      // Step 3: Filter out duplicates
-      const duplicateHashes = new Set(duplicateCheck.duplicates.map((d) => d.hash));
-      const uniqueFiles = fileHashes
-        .filter((fh) => !duplicateHashes.has(fh.hash))
-        .map((fh) => fh.file);
+  // Add files to an existing active batch
+  const addFilesToBatch = useCallback(async (files: File[]) => {
+    const batch = state.activeBatchUpload;
+    if (!batch) return;
 
-      // Log skipped duplicates
-      if (duplicateCheck.duplicate_count > 0) {
+    try {
+      const { uniqueFiles, duplicateCheck } = await deduplicateFiles(files);
+
+      if (uniqueFiles.length === 0) {
         const skippedNames = duplicateCheck.duplicates
           .map((d) => d.title || 'Unknown')
-          .join(', ');
-        console.log(
-          `Skipped ${duplicateCheck.duplicate_count} duplicate(s): ${skippedNames}`
+          .slice(0, 5)
+          .join('\n• ');
+        const moreCount = duplicateCheck.duplicates.length - 5;
+        alert(
+          `All ${duplicateCheck.duplicate_count} file${duplicateCheck.duplicate_count > 1 ? 's are' : ' is'} already in your library:\n\n• ${skippedNames}${moreCount > 0 ? `\n• ...and ${moreCount} more` : ''}\n\nNo files were uploaded.`
+        );
+        return;
+      }
+
+      console.log(`Adding ${uniqueFiles.length} files to existing batch ${batch.batchId}`);
+
+      const filenames = uniqueFiles.map((f) => f.name);
+      const addResponse = await api.addBatchTasks(batch.batchId, filenames);
+
+      const newTasks: UploadTask[] = addResponse.tasks.map((task, index) => ({
+        ...task,
+        file: uniqueFiles[index],
+      }));
+
+      dispatch({ type: 'ADD_BATCH_TASKS', payload: newTasks });
+
+      // Add papers to library with pending status
+      for (const task of newTasks) {
+        const pendingPaper: Paper = {
+          id: task.taskId,
+          title: task.filename.replace('.pdf', ''),
+          authors: [],
+          filename: task.filename,
+          pageCount: 0,
+          chunkCount: 0,
+          chunkStats: {},
+          status: 'pending',
+          pdfUrl: '',
+          progress: 0,
+          fileSizeBytes: 0,
+        };
+        dispatch({ type: 'ADD_PAPER', payload: pendingPaper });
+      }
+
+      // Re-open SSE stream if it was closed (batch_complete already fired)
+      if (!sseStreamRef.current) {
+        sseStreamRef.current = api.streamBatchProgress(
+          batch.batchId,
+          handleBatchSSEEvent,
+          (error) => {
+            console.error('Batch upload stream error:', error);
+            sseStreamRef.current = null;
+          }
         );
       }
 
-      // If all files are duplicates, don't proceed
+      // Upload the new files and start processing
+      await uploadAndProcess(batch.batchId, newTasks);
+
+    } catch (error) {
+      console.error('Failed to add files to batch:', error);
+    }
+  }, [state.activeBatchUpload, deduplicateFiles, handleBatchSSEEvent, uploadAndProcess]);
+
+  // Batch upload actions
+  const startBatchUpload = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+
+    // If there's already an active batch, add files to it
+    if (state.activeBatchUpload) {
+      return addFilesToBatch(files);
+    }
+
+    try {
+      const { uniqueFiles, duplicateCheck } = await deduplicateFiles(files);
+
       if (uniqueFiles.length === 0) {
         console.log('All files are duplicates, nothing to upload');
         const skippedNames = duplicateCheck.duplicates
@@ -1205,7 +1405,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Add papers to library with pending status
       for (const task of batch.tasks) {
         const pendingPaper: Paper = {
-          id: task.taskId, // Use task ID temporarily until we get paper ID
+          id: task.taskId,
           title: task.filename.replace('.pdf', ''),
           authors: [],
           filename: task.filename,
@@ -1221,125 +1421,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       // Start SSE stream for progress updates
-      api.streamBatchProgress(
+      sseStreamRef.current = api.streamBatchProgress(
         initResponse.batchId,
-        (event: BatchUploadSSEEvent) => {
-          if (event.type === 'task_progress' && event.taskId) {
-            dispatch({
-              type: 'UPDATE_UPLOAD_TASK',
-              payload: {
-                taskId: event.taskId,
-                updates: {
-                  status: (event.status as UploadTask['status']) || 'processing',
-                  currentStep: event.currentStep,
-                  progressPercent: event.progressPercent || 0,
-                  paperId: event.paperId,
-                },
-              },
-            });
-
-            // Update paper in library
-            dispatch({
-              type: 'UPDATE_PAPER',
-              payload: {
-                id: event.taskId,
-                updates: {
-                  status: 'indexing',
-                  progress: event.progressPercent,
-                },
-              },
-            });
-          } else if (event.type === 'task_complete' && event.taskId) {
-            dispatch({
-              type: 'UPDATE_UPLOAD_TASK',
-              payload: {
-                taskId: event.taskId,
-                updates: {
-                  status: 'complete',
-                  progressPercent: 100,
-                  paperId: event.paperId,
-                },
-              },
-            });
-
-            // Refresh papers to get the real paper data
-            refreshPapers();
-          } else if (event.type === 'task_error' && event.taskId) {
-            dispatch({
-              type: 'UPDATE_UPLOAD_TASK',
-              payload: {
-                taskId: event.taskId,
-                updates: {
-                  status: 'error',
-                  errorMessage: event.errorMessage,
-                },
-              },
-            });
-
-            dispatch({
-              type: 'UPDATE_PAPER',
-              payload: {
-                id: event.taskId,
-                updates: {
-                  status: 'error',
-                  errorMessage: event.errorMessage,
-                },
-              },
-            });
-          } else if (event.type === 'batch_complete') {
-            // Batch complete - refresh papers list
-            refreshPapers();
-            refreshStats();
-          }
-        },
+        handleBatchSSEEvent,
         (error) => {
           console.error('Batch upload stream error:', error);
+          sseStreamRef.current = null;
         }
       );
 
-      // Upload files in parallel (2 at a time)
-      const concurrency = 2;
-
-      for (let i = 0; i < batch.tasks.length; i += concurrency) {
-        const chunk = batch.tasks.slice(i, i + concurrency);
-        const chunkPromises = chunk.map(async (task) => {
-          if (!task.file) return;
-
-          dispatch({
-            type: 'UPDATE_UPLOAD_TASK',
-            payload: {
-              taskId: task.taskId,
-              updates: { status: 'uploading' },
-            },
-          });
-
-          try {
-            await api.uploadBatchFile(batch.batchId, task.taskId, task.file);
-          } catch (error) {
-            console.error(`Failed to upload ${task.filename}:`, error);
-            dispatch({
-              type: 'UPDATE_UPLOAD_TASK',
-              payload: {
-                taskId: task.taskId,
-                updates: {
-                  status: 'error',
-                  errorMessage: error instanceof Error ? error.message : 'Upload failed',
-                },
-              },
-            });
-          }
-        });
-
-        await Promise.all(chunkPromises);
-      }
-
-      // Start processing after all files are uploaded
-      await api.startBatchProcessing(batch.batchId);
+      // Upload files and start processing
+      await uploadAndProcess(batch.batchId, batch.tasks);
 
     } catch (error) {
       console.error('Failed to start batch upload:', error);
     }
-  }, [refreshPapers, refreshStats]);
+  }, [state.activeBatchUpload, addFilesToBatch, deduplicateFiles, handleBatchSSEEvent, uploadAndProcess]);
 
   const cancelUploadTaskAction = useCallback(async (taskId: string) => {
     const batch = state.activeBatchUpload;

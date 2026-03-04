@@ -32,21 +32,90 @@ export function BatchUploadPanel() {
   }, []);
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDragOver(false);
 
-      const files = Array.from(e.dataTransfer.files).filter(
-        (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
-      );
+      const items = e.dataTransfer.items;
+      const pdfFiles: File[] = [];
 
-      if (files.length > 0) {
-        if (files.length > 20) {
-          alert('Maximum 20 files per batch. Please select fewer files.');
-          return;
+      // Helper: recursively read all PDF files from a directory entry
+      const readDirectory = (dirEntry: FileSystemDirectoryEntry): Promise<File[]> => {
+        return new Promise((resolve) => {
+          const files: File[] = [];
+          const reader = dirEntry.createReader();
+
+          const readBatch = () => {
+            reader.readEntries((entries) => {
+              if (entries.length === 0) {
+                resolve(files);
+                return;
+              }
+              const promises = entries.map((entry) => {
+                if (entry.isFile && entry.name.toLowerCase().endsWith('.pdf')) {
+                  return new Promise<File | null>((res) => {
+                    (entry as FileSystemFileEntry).file((f) => res(f), () => res(null));
+                  });
+                } else if (entry.isDirectory) {
+                  return readDirectory(entry as FileSystemDirectoryEntry);
+                }
+                return Promise.resolve(null);
+              });
+              Promise.all(promises).then((results) => {
+                for (const result of results) {
+                  if (result instanceof File) {
+                    files.push(result);
+                  } else if (Array.isArray(result)) {
+                    files.push(...result);
+                  }
+                }
+                readBatch(); // Continue reading (readEntries may return partial results)
+              });
+            });
+          };
+
+          readBatch();
+        });
+      };
+
+      // Check if any items support webkitGetAsEntry (folder support)
+      if (items && items.length > 0 && typeof items[0].webkitGetAsEntry === 'function') {
+        const entryPromises: Promise<void>[] = [];
+
+        for (let i = 0; i < items.length; i++) {
+          const entry = items[i].webkitGetAsEntry();
+          if (!entry) continue;
+
+          if (entry.isFile && entry.name.toLowerCase().endsWith('.pdf')) {
+            entryPromises.push(
+              new Promise<void>((resolve) => {
+                (entry as FileSystemFileEntry).file((f) => {
+                  pdfFiles.push(f);
+                  resolve();
+                }, () => resolve());
+              })
+            );
+          } else if (entry.isDirectory) {
+            entryPromises.push(
+              readDirectory(entry as FileSystemDirectoryEntry).then((files) => {
+                pdfFiles.push(...files);
+              })
+            );
+          }
         }
-        startBatchUpload(files);
+
+        await Promise.all(entryPromises);
+      } else {
+        // Fallback: regular file drop
+        const dropped = Array.from(e.dataTransfer.files).filter(
+          (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+        );
+        pdfFiles.push(...dropped);
+      }
+
+      if (pdfFiles.length > 0) {
+        startBatchUpload(pdfFiles);
       }
     },
     [startBatchUpload]
@@ -56,10 +125,6 @@ export function BatchUploadPanel() {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || []);
       if (files.length > 0) {
-        if (files.length > 20) {
-          alert('Maximum 20 files per batch. Please select fewer files.');
-          return;
-        }
         startBatchUpload(files);
       }
       // Reset input so the same files can be selected again
@@ -164,10 +229,10 @@ export function BatchUploadPanel() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    Drop PDF files here
+                    Drop PDF files or folders here
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    or click to browse (max 20 files, use Ctrl/Cmd+Click to select multiple)
+                    or click to browse (use Ctrl/Cmd+Click to select multiple)
                   </p>
                 </div>
                 <label className="cursor-pointer">
@@ -190,32 +255,30 @@ export function BatchUploadPanel() {
           {/* Task list */}
           {activeBatchUpload && activeBatchUpload.tasks.length > 0 && (
             <div className="space-y-2">
-              {/* Add more files button */}
-              {!hasActiveUploads && (
-                <label className="block mb-4 cursor-pointer">
-                  <div
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
-                      isDragOver
-                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                        : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
-                    }`}
-                  >
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      <span className="text-blue-500 font-medium">Click to add more files</span> or drag and drop
-                    </p>
-                  </div>
-                  <input
-                    type="file"
-                    accept=".pdf,application/pdf"
-                    multiple={true}
-                    onChange={handleFileSelect}
-                    className="sr-only"
-                  />
-                </label>
-              )}
+              {/* Add more files button - always shown when batch exists */}
+              <label className="block mb-4 cursor-pointer">
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+                    isDragOver
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                      : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+                  }`}
+                >
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <span className="text-blue-500 font-medium">Click to add more files</span> or drag and drop
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  multiple={true}
+                  onChange={handleFileSelect}
+                  className="sr-only"
+                />
+              </label>
 
               {/* Task items */}
               {activeBatchUpload.tasks.map((task) => (

@@ -722,6 +722,22 @@ export async function initBatchUpload(filenames: string[]): Promise<BatchUploadI
   return handleResponse<BatchUploadInitResponse>(response);
 }
 
+// Add tasks to an existing batch
+export async function addBatchTasks(
+  batchId: string,
+  filenames: string[]
+): Promise<BatchUploadInitResponse> {
+  const response = await fetch(`${API_BASE}/papers/upload/batch/${batchId}/add-tasks`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ filenames }),
+  });
+  return handleResponse<BatchUploadInitResponse>(response);
+}
+
 // Upload a single file for a batch task
 export async function uploadBatchFile(
   batchId: string,
@@ -1127,6 +1143,7 @@ export const api = {
   backfillPaperHashes,
   // Batch upload
   initBatchUpload,
+  addBatchTasks,
   uploadBatchFile,
   startBatchProcessing,
   getBatchStatus,

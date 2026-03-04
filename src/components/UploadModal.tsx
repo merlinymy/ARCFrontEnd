@@ -185,7 +185,7 @@ export function UploadModal({ onClose, onComplete }: UploadModalProps) {
                 />
               </div>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-3 text-center">
-                Maximum file size: 50MB
+                Maximum file size: 200MB
               </p>
             </>
           )}

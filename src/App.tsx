@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout, ChatPage, LibraryPage, PdfViewer, LoginPage, HealthStatusPanel } from './components';
 import { PromptsPage } from './components/PromptsPage';
 import { ToastContainer } from './components/Toast';
+import { BatchUploadPanel } from './components/BatchUploadPanel';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
@@ -20,6 +21,9 @@ function AppContent() {
         {/* Global PDF Viewer - works from any page */}
         {viewingPdfId && <PdfViewer paperId={viewingPdfId} />}
       </Layout>
+
+      {/* Global Upload Panel */}
+      <BatchUploadPanel />
 
       {/* Toast Notifications */}
       <ToastContainer toasts={state.toasts} onClose={removeToast} />
