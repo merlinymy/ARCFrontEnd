@@ -1239,13 +1239,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
       dispatchSSEEventRef.current(event);
-      // If more events are queued, process after a short delay
-      // so React can paint each intermediate state
-      if (eventQueueRef.current.length > 0) {
-        requestAnimationFrame(() => setTimeout(processNext, 80));
-      } else {
-        processingEventsRef.current = false;
-      }
+      // ALWAYS hold the lock for 200ms after dispatching, even if queue is empty.
+      // This ensures events arriving in a synchronous burst (from a single
+      // reader.read() chunk) accumulate in the queue instead of each being
+      // processed immediately. Each pipeline step is visible for >= 200ms.
+      setTimeout(processNext, 200);
     };
 
     processNext();
