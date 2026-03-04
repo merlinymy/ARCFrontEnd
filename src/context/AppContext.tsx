@@ -1216,6 +1216,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } else if (event.type === 'batch_complete') {
       refreshPapers();
       refreshStats();
+      // Second refresh after a delay to catch any papers that weren't
+      // fully committed when the first refresh fired
+      setTimeout(() => {
+        refreshPapers();
+        refreshStats();
+      }, 1500);
       sseStreamRef.current = null;
       if (pollingRef.current) {
         clearInterval(pollingRef.current);

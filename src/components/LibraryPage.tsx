@@ -203,11 +203,12 @@ export function LibraryPage() {
   }, [searchQuery, semanticResults.length, isLoadingMoreSearchResults, hasMoreSearchResults]);
 
   // Load browse papers when sort changes (and no filters active)
+  // Also re-fetch when global papers change (e.g. after upload completes)
   useEffect(() => {
     if (!textFilter.trim() && !searchQuery.trim()) {
       loadBrowsePapers(sortField, sortOrder, true);
     }
-  }, [sortField, sortOrder, textFilter, searchQuery, loadBrowsePapers]);
+  }, [sortField, sortOrder, textFilter, searchQuery, loadBrowsePapers, papers]);
 
   // Infinite scroll with IntersectionObserver
   useEffect(() => {
