@@ -141,6 +141,7 @@ export type UploadTaskStatus =
   | 'uploading'
   | 'processing'
   | 'extracting'
+  | 'chunking'
   | 'embedding'
   | 'indexing'
   | 'complete'

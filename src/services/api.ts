@@ -777,75 +777,123 @@ export async function getBatchStatus(batchId: string): Promise<BatchStatusRespon
   return handleResponse<BatchStatusResponse>(response);
 }
 
-// Stream batch progress via SSE
+// Stream batch progress via SSE with ready signal and reconnection
 export function streamBatchProgress(
   batchId: string,
   onEvent: (event: BatchUploadSSEEvent) => void,
   onError?: (error: Error) => void
-): { close: () => void } {
+): { ready: Promise<void>; close: () => void } {
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   let isClosed = false;
+  let retryCount = 0;
+  const MAX_RETRIES = 5;
 
-  const startStream = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/papers/upload/batch/${batchId}/stream`, {
-        headers: getAuthHeaders(),
-      });
+  let resolveReady: () => void;
+  let rejectReady: (err: Error) => void;
+  let readySettled = false;
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
 
-      if (!response.ok) {
-        throw new ApiError(response.status, `Stream failed with status ${response.status}`);
-      }
+  const connectStream = async () => {
+    while (!isClosed && retryCount <= MAX_RETRIES) {
+      try {
+        const response = await fetch(`${API_BASE}/papers/upload/batch/${batchId}/stream`, {
+          headers: getAuthHeaders(),
+        });
 
-      reader = response.body?.getReader() || null;
-      if (!reader) {
-        throw new Error('No response body');
-      }
+        if (!response.ok) {
+          throw new ApiError(response.status, `Stream failed with status ${response.status}`);
+        }
 
-      const decoder = new TextDecoder();
-      let buffer = '';
+        reader = response.body?.getReader() || null;
+        if (!reader) {
+          throw new Error('No response body');
+        }
 
-      while (!isClosed) {
-        const { done, value } = await reader.read();
+        // Reset retry count on successful connection
+        retryCount = 0;
 
-        if (done) break;
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-        buffer += decoder.decode(value, { stream: true });
+        while (!isClosed) {
+          const { done, value } = await reader.read();
 
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+          if (done) break;
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const jsonStr = line.slice(6).trim();
-            if (jsonStr) {
-              try {
-                const event = JSON.parse(jsonStr) as BatchUploadSSEEvent;
-                onEvent(event);
+          buffer += decoder.decode(value, { stream: true });
 
-                // Close stream if batch is complete
-                if (event.type === 'batch_complete') {
-                  isClosed = true;
-                  break;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const jsonStr = line.slice(6).trim();
+              if (jsonStr) {
+                try {
+                  const event = JSON.parse(jsonStr) as BatchUploadSSEEvent;
+
+                  // Resolve ready on first event (initial status)
+                  if (!readySettled) {
+                    readySettled = true;
+                    resolveReady();
+                  }
+
+                  onEvent(event);
+
+                  // Close stream if batch is complete
+                  if (event.type === 'batch_complete') {
+                    isClosed = true;
+                    break;
+                  }
+                } catch (e) {
+                  console.error('[SSE] Failed to parse event:', e, jsonStr);
                 }
-              } catch (e) {
-                console.error('Failed to parse SSE event:', e, jsonStr);
               }
             }
           }
         }
-      }
-    } catch (error) {
-      if (!isClosed && onError) {
-        onError(error instanceof Error ? error : new Error(String(error)));
+
+        // Stream ended cleanly — don't reconnect
+        break;
+      } catch (error) {
+        if (isClosed) break;
+
+        retryCount++;
+        console.warn(`[SSE] Connection attempt ${retryCount}/${MAX_RETRIES} failed:`, error);
+
+        if (retryCount > MAX_RETRIES) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          if (!readySettled) {
+            readySettled = true;
+            rejectReady(err);
+          }
+          if (onError) {
+            onError(err);
+          }
+          break;
+        }
+
+        // Exponential backoff: 500ms, 1s, 2s, 4s, 8s
+        const delay = Math.min(500 * Math.pow(2, retryCount - 1), 8000);
+        console.log(`[SSE] Reconnecting in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
       }
     }
   };
 
-  startStream();
+  connectStream();
 
   return {
+    ready,
     close: () => {
       isClosed = true;
+      if (!readySettled) {
+        readySettled = true;
+        resolveReady(); // Don't leave callers hanging
+      }
       if (reader) {
         reader.cancel();
       }

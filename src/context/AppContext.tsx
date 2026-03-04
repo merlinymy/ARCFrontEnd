@@ -1143,7 +1143,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // SSE stream ref to track connection state
-  const sseStreamRef = useRef<{ close: () => void } | null>(null);
+  const sseStreamRef = useRef<{ ready: Promise<void>; close: () => void } | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Shared SSE event handler
   const handleBatchSSEEvent = useCallback((event: BatchUploadSSEEvent) => {
@@ -1212,6 +1213,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshPapers();
       refreshStats();
       sseStreamRef.current = null;
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
     }
   }, [refreshPapers, refreshStats]);
 
@@ -1237,6 +1242,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         try {
           await api.uploadBatchFile(batchId, task.taskId, task.file);
+          // Transition from uploading → processing so UI doesn't stay stuck on "Uploading..."
+          dispatch({
+            type: 'UPDATE_UPLOAD_TASK',
+            payload: {
+              taskId: task.taskId,
+              updates: { status: 'processing', progressPercent: 5 },
+            },
+          });
         } catch (error) {
           console.error(`Failed to upload ${task.filename}:`, error);
           dispatch({
@@ -1345,14 +1358,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       // Re-open SSE stream if it was closed (batch_complete already fired)
       if (!sseStreamRef.current) {
-        sseStreamRef.current = api.streamBatchProgress(
+        const stream = api.streamBatchProgress(
           batch.batchId,
           handleBatchSSEEvent,
           (error) => {
-            console.error('Batch upload stream error:', error);
+            console.error('[SSE] Batch stream error on add:', error);
             sseStreamRef.current = null;
           }
         );
+        sseStreamRef.current = stream;
+
+        // Wait for SSE readiness before uploading
+        try {
+          await Promise.race([
+            stream.ready,
+            new Promise<void>((_, reject) => setTimeout(() => reject(new Error('SSE timeout')), 5000)),
+          ]);
+        } catch {
+          console.warn('[SSE] Ready timeout on add, proceeding anyway');
+        }
       }
 
       // Upload the new files and start processing
@@ -1427,14 +1451,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       // Start SSE stream for progress updates
-      sseStreamRef.current = api.streamBatchProgress(
+      const stream = api.streamBatchProgress(
         initResponse.batchId,
         handleBatchSSEEvent,
         (error) => {
-          console.error('Batch upload stream error:', error);
+          console.error('[SSE] Batch stream failed, starting polling fallback:', error);
           sseStreamRef.current = null;
+          // Start polling fallback
+          if (!pollingRef.current) {
+            pollingRef.current = setInterval(async () => {
+              try {
+                const status = await api.getBatchStatus(initResponse.batchId);
+                for (const task of status.tasks) {
+                  dispatch({
+                    type: 'UPDATE_UPLOAD_TASK',
+                    payload: {
+                      taskId: task.taskId,
+                      updates: {
+                        status: task.status,
+                        currentStep: task.currentStep,
+                        progressPercent: task.progressPercent,
+                        paperId: task.paperId,
+                        errorMessage: task.errorMessage,
+                      },
+                    },
+                  });
+                }
+                if (status.completed + status.failed === status.total) {
+                  if (pollingRef.current) {
+                    clearInterval(pollingRef.current);
+                    pollingRef.current = null;
+                  }
+                  refreshPapers();
+                  refreshStats();
+                }
+              } catch (e) {
+                console.error('[Polling] Failed to get batch status:', e);
+              }
+            }, 2000);
+          }
         }
       );
+      sseStreamRef.current = stream;
+
+      // Wait for SSE to be ready (with 5s timeout) before uploading
+      try {
+        await Promise.race([
+          stream.ready,
+          new Promise<void>((_, reject) => setTimeout(() => reject(new Error('SSE timeout')), 5000)),
+        ]);
+        console.log('[SSE] Stream ready, starting uploads');
+      } catch {
+        console.warn('[SSE] Ready timeout, proceeding with uploads anyway');
+      }
 
       // Upload files and start processing
       await uploadAndProcess(batch.batchId, batch.tasks);

@@ -1,5 +1,22 @@
 import { Upload, ChevronUp, CheckCircle, AlertCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import type { UploadTaskStatus } from '../types';
+
+const STEP_LABELS: Record<UploadTaskStatus, string> = {
+  pending: 'Waiting',
+  uploading: 'Uploading',
+  processing: 'Processing',
+  extracting: 'Extracting text',
+  chunking: 'Creating chunks',
+  embedding: 'Generating embeddings',
+  indexing: 'Indexing',
+  complete: 'Complete',
+  error: 'Failed',
+};
+
+function stepLabel(status: UploadTaskStatus): string {
+  return STEP_LABELS[status] || status;
+}
 
 export function MinimizedUploadWidget() {
   const { state, maximizeUploadPanel } = useApp();
@@ -103,8 +120,10 @@ export function MinimizedUploadWidget() {
               </>
             ) : currentTask ? (
               <>
-                {currentTask.filename.slice(0, 25)}
-                {currentTask.filename.length > 25 && '...'}
+                {currentTask.currentStep || stepLabel(currentTask.status)}
+                {' - '}
+                {currentTask.filename.slice(0, 20)}
+                {currentTask.filename.length > 20 && '...'}
               </>
             ) : (
               <>
