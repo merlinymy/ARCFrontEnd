@@ -84,7 +84,7 @@ function getStepIndex(status: UploadTaskStatus): number {
   switch (status) {
     case 'pending': return -1;
     case 'uploading': return 0;
-    case 'processing': return 0; // still in upload/processing phase
+    case 'processing': return 1; // upload done, queued for extraction
     case 'extracting': return 1;
     case 'chunking': return 2;
     case 'embedding': return 3;
