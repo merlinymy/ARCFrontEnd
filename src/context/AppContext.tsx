@@ -1147,6 +1147,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Shared SSE event handler
   const handleBatchSSEEvent = useCallback((event: BatchUploadSSEEvent) => {
+    console.log('[SSE]', event.type, event.status, event.currentStep, event.progressPercent);
     if (event.type === 'task_progress' && event.taskId) {
       dispatch({
         type: 'UPDATE_UPLOAD_TASK',
@@ -1254,7 +1255,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await Promise.all(chunkPromises);
     }
 
-    await api.startBatchProcessing(batchId);
+    try {
+      await api.startBatchProcessing(batchId);
+    } catch (error) {
+      // Non-fatal: the processing queue auto-picks up tasks
+      console.warn('startBatchProcessing returned error (processing may already be in progress):', error);
+    }
   }, []);
 
   // Helper: deduplicate files and return unique ones
