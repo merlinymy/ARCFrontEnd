@@ -69,14 +69,14 @@ const statusConfig: Record<UploadTaskStatus, {
   },
 };
 
-// Pipeline steps in order
+// Pipeline steps in order, with the overall progress range each step maps to
 const PIPELINE_STEPS = [
-  { key: 'uploading', label: 'Upload' },
-  { key: 'extracting', label: 'Extract' },
-  { key: 'chunking', label: 'Chunk' },
-  { key: 'embedding', label: 'Embed' },
-  { key: 'indexing', label: 'Index' },
-  { key: 'complete', label: 'Done' },
+  { key: 'uploading', label: 'Upload', range: [0, 5] },
+  { key: 'extracting', label: 'Extract', range: [5, 35] },
+  { key: 'chunking', label: 'Chunk', range: [35, 45] },
+  { key: 'embedding', label: 'Embed', range: [45, 75] },
+  { key: 'indexing', label: 'Index', range: [75, 90] },
+  { key: 'complete', label: 'Done', range: [90, 100] },
 ] as const;
 
 // Map statuses to their pipeline step index (-1 means before pipeline)
@@ -93,6 +93,14 @@ function getStepIndex(status: UploadTaskStatus): number {
     case 'error': return -2;
     default: return -1;
   }
+}
+
+// Compute how far we are within the active step (0-100%)
+function getStepLocalPercent(overallPercent: number, stepIdx: number): number {
+  if (stepIdx < 0 || stepIdx >= PIPELINE_STEPS.length) return 0;
+  const [lo, hi] = PIPELINE_STEPS[stepIdx].range;
+  if (hi <= lo) return 0;
+  return Math.min(100, Math.max(0, Math.round(((overallPercent - lo) / (hi - lo)) * 100)));
 }
 
 function StepIcon({ state }: { state: 'completed' | 'active' | 'pending' }) {
@@ -209,7 +217,7 @@ export function BatchUploadItem({ task, onCancel, onRetry }: BatchUploadItemProp
                     {/* Step */}
                     <div className="flex flex-col items-center" title={step.label}>
                       <StepIcon state={state} />
-                      <span className={`text-[10px] mt-0.5 leading-none ${
+                      <span className={`text-[10px] mt-0.5 leading-none tabular-nums ${
                         state === 'completed'
                           ? 'text-green-600 dark:text-green-400'
                           : state === 'active'
@@ -218,6 +226,11 @@ export function BatchUploadItem({ task, onCancel, onRetry }: BatchUploadItemProp
                       }`}>
                         {step.label}
                       </span>
+                      {state === 'active' && task.progressPercent > 0 && (
+                        <span className="text-[10px] leading-none text-blue-500 dark:text-blue-400 font-semibold tabular-nums">
+                          {getStepLocalPercent(task.progressPercent, idx)}%
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -235,11 +248,11 @@ export function BatchUploadItem({ task, onCancel, onRetry }: BatchUploadItemProp
                 />
               </div>
               <div className="mt-1 flex items-center justify-between">
-                <span className={`text-xs ${config.color}`}>
+                <span className={`text-xs font-medium ${config.color} truncate`}>
                   {task.currentStep || config.label}
                 </span>
                 {isProcessing && task.progressPercent > 0 && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300 flex-shrink-0 ml-2 tabular-nums">
                     {task.progressPercent}%
                   </span>
                 )}
