@@ -856,7 +856,21 @@ export function streamBatchProgress(
           }
         }
 
-        // Stream ended cleanly — don't reconnect
+        // Stream ended without batch_complete — connection was killed
+        // (e.g. proxy timeout during long processing). Reconnect.
+        if (!isClosed) {
+          retryCount++;
+          console.warn(`[SSE] Stream ended prematurely, reconnecting (${retryCount}/${MAX_RETRIES})...`);
+          if (retryCount > MAX_RETRIES) {
+            if (onError) {
+              onError(new Error('SSE stream ended prematurely after max retries'));
+            }
+            break;
+          }
+          const delay = Math.min(500 * Math.pow(2, retryCount - 1), 8000);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
         break;
       } catch (error) {
         if (isClosed) break;
