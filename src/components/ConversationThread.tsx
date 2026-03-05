@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageSquare, Sparkles, Check, Loader2, SkipForward, AlertTriangle, Globe } from 'lucide-react';
+import { MessageSquare, Sparkles, Check, Loader2, SkipForward, AlertTriangle, Globe, BookOpen, Upload, Settings } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { ResponseCard } from './ResponseCard';
 import type { PipelineStepInfo } from '../types';
@@ -119,7 +119,7 @@ interface ConversationThreadProps {
 }
 
 export function ConversationThread({ onScroll }: ConversationThreadProps) {
-  const { state } = useApp();
+  const { state, setActivePage, openUploadPanel } = useApp();
   const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState, webSearchProgress } = state;
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -202,17 +202,41 @@ export function ConversationThread({ onScroll }: ConversationThreadProps) {
   if (!activeConversation || activeConversation.messages.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
-        <div className="text-center max-w-md">
+        <div className="text-center max-w-lg">
           <div className="w-16 h-16 mx-auto mb-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
             <Sparkles className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">
             A'Lester's Research Chatbot
           </h2>
-          <p className="text-gray-600 dark:text-gray-400">
+          <p className="text-gray-600 dark:text-gray-400 mb-8">
             Ask questions about your indexed research papers. Get accurate
             answers with source citations and full RAG pipeline transparency.
           </p>
+
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => setActivePage('library')}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shadow-sm"
+            >
+              <BookOpen className="w-4.5 h-4.5" />
+              <span className="font-medium text-sm">Library</span>
+            </button>
+            <button
+              onClick={openUploadPanel}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shadow-sm"
+            >
+              <Upload className="w-4.5 h-4.5" />
+              <span className="font-medium text-sm">Upload</span>
+            </button>
+            <button
+              onClick={() => setActivePage('prompts')}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shadow-sm"
+            >
+              <Settings className="w-4.5 h-4.5" />
+              <span className="font-medium text-sm">Prompts</span>
+            </button>
+          </div>
         </div>
       </div>
     );
