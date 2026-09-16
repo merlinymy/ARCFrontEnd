@@ -10,7 +10,11 @@ export function PdfViewer({ paperId }: PdfViewerProps) {
   const { state, setViewingPdf } = useApp();
 
   const paper = state.papers.find((p) => p.id === paperId);
+  const page = state.viewingPdfPage;
+  // The fragment is what opens the viewer at the cited page; downloads must not
+  // carry it, so keep the plain URL separately.
   const pdfUrl = getPdfUrl(paperId);
+  const viewUrl = getPdfUrl(paperId, page);
 
   const handleClose = () => {
     setViewingPdf(null);
@@ -26,7 +30,7 @@ export function PdfViewer({ paperId }: PdfViewerProps) {
   };
 
   const handleOpenInNewTab = () => {
-    window.open(pdfUrl, '_blank');
+    window.open(viewUrl, '_blank');
   };
 
   return (
@@ -41,6 +45,7 @@ export function PdfViewer({ paperId }: PdfViewerProps) {
             {paper && (
               <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                 {paper.filename}
+                {page ? ` · p. ${page}` : ''}
               </p>
             )}
           </div>
@@ -73,7 +78,8 @@ export function PdfViewer({ paperId }: PdfViewerProps) {
         {/* PDF Embed */}
         <div className="flex-1 bg-gray-100 dark:bg-gray-900">
           <iframe
-            src={pdfUrl}
+            key={viewUrl}
+            src={viewUrl}
             className="w-full h-full"
             title={paper?.title || 'PDF Document'}
           />

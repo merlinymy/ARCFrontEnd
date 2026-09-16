@@ -56,6 +56,7 @@ const initialState: AppState = {
   activePage: 'chat',
   selectedPaperId: null,
   viewingPdfId: null,
+  viewingPdfPage: null,
   webSearchProgress: null,
   thinkingProgress: null,
   // Batch upload
@@ -99,7 +100,7 @@ type Action =
   | { type: 'ADD_PAPER'; payload: Paper }
   | { type: 'UPDATE_PAPER'; payload: { id: string; updates: Partial<Paper> } }
   | { type: 'REMOVE_PAPER'; payload: string }
-  | { type: 'SET_VIEWING_PDF'; payload: string | null }
+  | { type: 'SET_VIEWING_PDF'; payload: { paperId: string | null; page?: number | null } }
   // Batch upload actions
   | { type: 'START_BATCH_UPLOAD'; payload: BatchUpload }
   | { type: 'UPDATE_UPLOAD_TASK'; payload: { taskId: string; updates: Partial<UploadTask> } }
@@ -282,10 +283,15 @@ function appReducer(state: AppState, action: Action): AppState {
         ...state,
         papers: state.papers.filter((p) => p.id !== action.payload),
         viewingPdfId: state.viewingPdfId === action.payload ? null : state.viewingPdfId,
+        viewingPdfPage: state.viewingPdfId === action.payload ? null : state.viewingPdfPage,
       };
 
     case 'SET_VIEWING_PDF':
-      return { ...state, viewingPdfId: action.payload };
+      return {
+        ...state,
+        viewingPdfId: action.payload.paperId,
+        viewingPdfPage: action.payload.page ?? null,
+      };
 
     // Batch upload reducers
     case 'START_BATCH_UPLOAD':
@@ -538,7 +544,7 @@ interface AppContextValue {
   loadMorePapers: () => Promise<void>;
   deletePaper: (paperId: string) => Promise<void>;
   updatePaper: (paperId: string, updates: Partial<Paper>) => void;
-  setViewingPdf: (paperId: string | null) => void;
+  setViewingPdf: (paperId: string | null, page?: number | null) => void;
   // Batch upload actions
   startBatchUpload: (files: File[]) => Promise<void>;
   cancelUploadTask: (taskId: string) => Promise<void>;
@@ -1179,9 +1185,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'UPDATE_PAPER', payload: { id: paperId, updates } });
   }, []);
 
-  const setViewingPdf = useCallback((paperId: string | null) => {
-    dispatch({ type: 'SET_VIEWING_PDF', payload: paperId });
-  }, []);
+  const setViewingPdf = useCallback(
+    (paperId: string | null, page?: number | null) => {
+      dispatch({ type: 'SET_VIEWING_PDF', payload: { paperId, page } });
+    },
+    []
+  );
 
   // SSE stream ref to track connection state
   const sseStreamRef = useRef<{ ready: Promise<void>; close: () => void } | null>(null);
