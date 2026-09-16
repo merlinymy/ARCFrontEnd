@@ -11,13 +11,15 @@ import {
   AlertTriangle,
   Globe,
   ExternalLink,
+  Image as ImageIcon,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { SourceCard } from './SourceCard';
+import { FigureView } from './FigureView';
 import { Tooltip } from './Tooltip';
 import { useApp } from '../context/AppContext';
-import type { Message, CitationCheck } from '../types';
+import type { Message, CitationCheck, Source } from '../types';
 
 interface ResponseCardProps {
   queryMessage: Message;
@@ -276,6 +278,40 @@ function createCitationComponents(checkMap: Map<number, CitationCheck>, isChecki
   };
 }
 
+interface CitedFigure {
+  key: string;
+  paperId: string;
+  figureId: string;
+  label: string | null;
+  page: number | null;
+  paperTitle: string;
+}
+
+/**
+ * Figures among the retrieved sources that have a persisted crop, deduped by
+ * (paper, figure) — the same figure arrives as both a caption chunk and a table
+ * chunk often enough to matter.
+ */
+function collectCitedFigures(sources: Source[]): CitedFigure[] {
+  const seen = new Set<string>();
+  const out: CitedFigure[] = [];
+  for (const source of sources) {
+    if (!source.figure_id || !source.has_figure_image) continue;
+    const key = `${source.paper_id}:${source.figure_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      key,
+      paperId: source.paper_id,
+      figureId: source.figure_id,
+      label: source.figure_label ?? null,
+      page: source.figure_page ?? null,
+      paperTitle: source.paper_title,
+    });
+  }
+  return out;
+}
+
 export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProps) {
   const [showAllSources, setShowAllSources] = useState(false);
   const [showPipeline, setShowPipeline] = useState(false);
@@ -361,6 +397,15 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
   );
   const visibleSources = showAllSources ? sources : sources.slice(0, 3);
   const hiddenCount = sources.length - 3;
+
+  // Figures among the retrieved sources that have a persisted crop, deduped by
+  // (paper, figure): the same figure can arrive as both a caption chunk and a
+  // table chunk. Rendered in the thread so the user can look at the actual
+  // plot without leaving the conversation -- the image is the evidence, and
+  // nothing here interprets it.
+  // Plain derivation, not a useMemo: this component already calls its hooks
+  // after an early return, and at <=15 sources the dedupe is free.
+  const citedFigures = collectCitedFigures(sources);
 
   // Build citation check map for quick lookup
   const citationCheckMap = useMemo(() => {
@@ -460,6 +505,29 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
           </div>
         )}
       </div>
+
+      {/* Figures from the cited sources */}
+      {citedFigures.length > 0 && (
+        <div className="mt-4">
+          <h4 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+            <ImageIcon className="w-4 h-4 text-gray-400" />
+            Figures in the cited sources ({citedFigures.length})
+          </h4>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {citedFigures.map((figure) => (
+              <FigureView
+                key={figure.key}
+                paperId={figure.paperId}
+                figureId={figure.figureId}
+                label={figure.label}
+                caption={figure.paperTitle}
+                page={figure.page}
+                variant="thumbnail"
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Sources */}
       {sources.length > 0 && (

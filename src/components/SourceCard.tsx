@@ -6,9 +6,11 @@ import {
   Copy,
   ExternalLink,
   Check,
+  Image as ImageIcon,
 } from 'lucide-react';
-import type { Source, ChunkType } from '../types';
+import type { FigureRef, Source, ChunkType } from '../types';
 import { useApp } from '../context/AppContext';
+import { FigureView, FigureLightbox } from './FigureView';
 
 interface SourceCardProps {
   source: Source;
@@ -33,10 +35,72 @@ const CHUNK_TYPE_LABELS: Record<ChunkType, string> = {
   full: 'Full document',
 };
 
+/**
+ * Renders chunk text with its resolved figure references as buttons.
+ *
+ * Every entry in `figure_refs` resolved to a real object on the backend --
+ * unresolved mentions are dropped there, not styled differently here. So the
+ * two states are "link" and "ordinary text", and there is no third state where
+ * a reference looks clickable and does nothing.
+ */
+function TextWithFigureRefs({
+  text,
+  refs,
+  onOpen,
+}: {
+  text: string;
+  refs: FigureRef[];
+  onOpen: (ref: FigureRef) => void;
+}) {
+  if (!refs.length) return <>{text}</>;
+
+  const ordered = [...refs]
+    .filter((r) => r.start >= 0 && r.end > r.start && r.end <= text.length)
+    .sort((a, b) => a.start - b.start);
+
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  ordered.forEach((ref, i) => {
+    if (ref.start < cursor) return;        // overlapping span: keep the first
+    if (ref.start > cursor) parts.push(text.slice(cursor, ref.start));
+    parts.push(
+      <button
+        key={`ref-${i}-${ref.figure_id}`}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpen(ref);
+        }}
+        title={
+          ref.label
+            ? `Show ${ref.label}${ref.page ? ` (p. ${ref.page})` : ''}`
+            : 'Show this figure'
+        }
+        className="inline text-blue-600 dark:text-blue-400 underline decoration-dotted underline-offset-2 hover:decoration-solid"
+      >
+        {text.slice(ref.start, ref.end)}
+      </button>
+    );
+    cursor = ref.end;
+  });
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <>{parts}</>;
+}
+
 export function SourceCard({ source, index }: SourceCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [openRef, setOpenRef] = useState<FigureRef | null>(null);
   const { setViewingPdf } = useApp();
+
+  // The figure this source *is*: a caption or table chunk whose crop exists.
+  const ownFigure =
+    source.figure_id && source.has_figure_image ? source.figure_id : null;
+  // Figures this source *mentions*, already resolved by the backend.
+  const figureRefs = source.figure_refs ?? [];
+  // Where "View in Paper" should land: the figure's page for a caption, the
+  // span's own first page otherwise.
+  const jumpPage = source.figure_page ?? source.page_start ?? null;
 
   // Handle sources without relevance_score (e.g., web search sources)
   const hasRelevanceScore = source.relevance_score !== undefined && source.relevance_score !== null;
@@ -97,12 +161,26 @@ export function SourceCard({ source, index }: SourceCardProps) {
               </div>
             )}
 
-            <div className="flex items-center gap-2 mt-2">
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
               <span
                 className={`text-xs px-2 py-0.5 rounded-full ${CHUNK_TYPE_COLORS[chunkType]}`}
               >
                 {CHUNK_TYPE_LABELS[chunkType]}
               </span>
+              {source.page_start != null && (
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  p.&nbsp;{source.page_start}
+                  {source.page_end != null && source.page_end !== source.page_start
+                    ? `-${source.page_end}`
+                    : ''}
+                </span>
+              )}
+              {source.figure_label && (
+                <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
+                  <ImageIcon className="w-3 h-3" />
+                  {source.figure_label}
+                </span>
+              )}
             </div>
           </div>
 
@@ -120,8 +198,27 @@ export function SourceCard({ source, index }: SourceCardProps) {
       {/* Expanded content */}
       {expanded && (
         <div className="border-t border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-900">
+          {/* The figure itself, when this source is a caption or a table and a
+              crop was persisted. Shown before the text, because for a figure
+              source the image *is* the content and the caption is the index. */}
+          {ownFigure && (
+            <FigureView
+              paperId={source.paper_id}
+              figureId={ownFigure}
+              label={source.figure_label}
+              page={source.figure_page}
+              className="mb-3"
+            />
+          )}
+
           <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto">
-            <p className="whitespace-pre-wrap">{source.chunk_text}</p>
+            <p className="whitespace-pre-wrap">
+              <TextWithFigureRefs
+                text={source.chunk_text}
+                refs={figureRefs}
+                onOpen={setOpenRef}
+              />
+            </p>
           </div>
 
           <div className="flex items-center gap-2 mt-3">
@@ -143,15 +240,26 @@ export function SourceCard({ source, index }: SourceCardProps) {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setViewingPdf(source.paper_id);
+                setViewingPdf(source.paper_id, jumpPage);
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg transition-colors"
             >
               <ExternalLink className="w-4 h-4" />
-              View in Paper
+              {jumpPage ? `View in Paper (p. ${jumpPage})` : 'View in Paper'}
             </button>
           </div>
         </div>
+      )}
+
+      {/* An in-text "Figure 3" the user clicked: the figure, not the page. */}
+      {openRef && (
+        <FigureLightbox
+          paperId={source.paper_id}
+          figureId={openRef.figure_id}
+          label={openRef.label}
+          page={openRef.page}
+          onClose={() => setOpenRef(null)}
+        />
       )}
     </div>
   );

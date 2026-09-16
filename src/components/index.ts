@@ -12,5 +12,6 @@ export { PipelineVisualization } from './PipelineVisualization';
 export { LibraryPage } from './LibraryPage';
 export { PaperCard } from './PaperCard';
 export { PdfViewer } from './PdfViewer';
+export { FigureView, FigureLightbox } from './FigureView';
 export { UploadModal } from './UploadModal';
 export { LoginPage } from './LoginPage';
