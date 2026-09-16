@@ -18,6 +18,21 @@ export interface Entity {
   type: 'chemical' | 'protein' | 'method' | 'organism' | 'metric' | 'other';
 }
 
+// A resolved in-text figure reference inside a source's chunk_text.
+// Offsets are into `chunk_text` as received (the backend clips any ref whose
+// span falls past the truncation point), so they can be sliced directly.
+// Unresolved mentions never appear here: an absent ref is plain prose, which
+// is what keeps this feature from producing dead links.
+export interface FigureRef {
+  start: number;
+  end: number;
+  text: string;
+  figure_id: string;
+  label: string | null;
+  page: number | null;
+  inferred: boolean;
+}
+
 // Source from the backend
 export interface Source {
   paper_title: string;
@@ -27,6 +42,50 @@ export interface Source {
   chunk_type: ChunkType;
   chunk_text: string;
   relevance_score: number;
+  // Provenance: 1-indexed pages the verbatim span covers
+  page_start?: number | null;
+  page_end?: number | null;
+  // The figure this source *is* (caption and table chunks)
+  figure_id?: string | null;
+  figure_kind?: 'figure' | 'table' | null;
+  figure_label?: string | null;
+  // The *figure's* page and rectangle, not the caption's
+  figure_page?: number | null;
+  figure_bbox?: number[] | null;
+  has_figure_image?: boolean;
+  // Figures this source *mentions*
+  figure_refs?: FigureRef[];
+}
+
+// One figure or table of a paper, from GET /papers/{id}/figures
+export interface PaperFigure {
+  figure_id: string;
+  kind: 'figure' | 'table';
+  label: string | null;
+  label_source: string | null;
+  page: number | null;
+  bbox: number[] | null;
+  bbox_is_image: boolean;
+  caption: string;
+  footnote: string;
+  has_image: boolean;
+  /**
+   * Route path relative to the API root, matching the existing `pdf_url`
+   * convention -- NOT a fetchable URL on its own. Use `getFigureImageUrl()`,
+   * which prepends API_BASE; a raw value here breaks under the /api proxy
+   * prefix exactly the way the two hardcoded hosts in PaperCard.tsx did.
+   */
+  image_url: string | null;
+  n_rows: number | null;
+  n_cols: number | null;
+}
+
+export interface PaperFigureList {
+  paper_id: string;
+  figures: PaperFigure[];
+  total: number;
+  images_available: boolean;
+  schema_version: number | null;
 }
 
 // Citation verification check result
@@ -480,6 +539,8 @@ export interface AppState {
   activePage: 'chat' | 'library' | 'prompts' | 'health';
   selectedPaperId: string | null;
   viewingPdfId: string | null;
+  //: Page to open the PDF viewer at, 1-indexed. Null means page 1.
+  viewingPdfPage: number | null;
   webSearchProgress: string | null; // Current web search progress message
   thinkingProgress: string | null; // Summarized model reasoning streamed during generation
   toasts: ToastMessage[]; // Toast notifications

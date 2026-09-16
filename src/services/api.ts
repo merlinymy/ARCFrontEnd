@@ -12,6 +12,7 @@ import type {
   BatchUploadSSEEvent,
   AnswerMode,
   PromptGroup,
+  PaperFigureList,
 } from '../types';
 import { getAuthToken } from '../context/AuthContext';
 
@@ -464,9 +465,29 @@ export async function getPaper(paperId: string): Promise<Paper> {
   return apiPaperToPaper(data);
 }
 
-// Get PDF URL for a paper
-export function getPdfUrl(paperId: string): string {
-  return `${API_BASE}/papers/${paperId}/pdf`;
+// Get PDF URL for a paper.
+// `page` becomes a PDF Open Parameter fragment, which the browser's built-in
+// viewer honours -- the cheap half of click-to-highlight, ahead of W3's pdf.js
+// work. A fragment is never sent to the server, so it cannot break the route.
+export function getPdfUrl(paperId: string, page?: number | null): string {
+  const url = `${API_BASE}/papers/${paperId}/pdf`;
+  return page && page > 0 ? `${url}#page=${page}` : url;
+}
+
+// Image bytes for one figure or table crop.
+// Goes through API_BASE like every other call: two hardcoded-host calls in
+// PaperCard.tsx were removed for exactly this reason, and an <img src> is just
+// as broken by a wrong host as a fetch is.
+export function getFigureImageUrl(paperId: string, figureId: string): string {
+  return `${API_BASE}/papers/${paperId}/figures/${encodeURIComponent(figureId)}/image`;
+}
+
+// List a paper's figures and tables
+export async function getPaperFigures(paperId: string): Promise<PaperFigureList> {
+  const response = await fetch(`${API_BASE}/papers/${paperId}/figures`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<PaperFigureList>(response);
 }
 
 // Delete a paper
@@ -1209,6 +1230,8 @@ export const api = {
   getPapers,
   getPaper,
   getPdfUrl,
+  getFigureImageUrl,
+  getPaperFigures,
   deletePaper,
   searchPapers,
   uploadPaper,
