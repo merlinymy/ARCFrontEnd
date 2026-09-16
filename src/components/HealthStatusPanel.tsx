@@ -227,7 +227,7 @@ export function HealthStatusPanel() {
               {getStatusIcon(services.anthropic?.status)}
             </div>
             <div className="text-sm text-gray-600 dark:text-gray-400">
-              Model: {stats?.llm_model ?? 'claude-sonnet-4-20250514'}
+              Model: {stats?.llm_model ?? 'unknown'}
             </div>
             {services.anthropic?.error && (
               <div className="mt-2 text-sm text-red-600 dark:text-red-400">
