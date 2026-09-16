@@ -8,14 +8,17 @@ import {
   Shield,
   Loader2,
   Trash2,
-  AlignLeft,
-  BookOpen,
   Globe,
   Search,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { InfoTooltip } from './Tooltip';
-import type { EffortLevel, QueryType } from '../types';
+import {
+  ANSWER_MODES,
+  ANSWER_MODE_LABELS,
+  ANSWER_MODE_DESCRIPTIONS,
+} from '../types';
+import type { AnswerMode, EffortLevel, QueryType, ResponseMode } from '../types';
 
 const QUERY_TYPES: { value: QueryType | 'auto'; label: string }[] = [
   { value: 'auto', label: 'Auto-detect (Recommended)' },
@@ -30,6 +33,10 @@ const QUERY_TYPES: { value: QueryType | 'auto'; label: string }[] = [
 ];
 
 const TOP_K_OPTIONS = [5, 10, 15, 20, 30, 50];
+const RESPONSE_MODE_OPTIONS: { value: ResponseMode; label: string }[] = [
+  { value: 'concise', label: 'Concise' },
+  { value: 'detailed', label: 'Detailed' },
+];
 const EFFORT_OPTIONS: { value: EffortLevel; label: string }[] = [
   { value: 'low', label: 'Low (fastest)' },
   { value: 'medium', label: 'Medium' },
@@ -129,47 +136,41 @@ export function QueryInput() {
         {/* Advanced options panel */}
         {showAdvanced && (
           <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
-            {/* Response Mode - FIRST */}
+            {/* Mode (stance) - FIRST. Selects how the model responds, not what
+                it retrieves. */}
             <div className="mb-4">
               <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Response Mode
-                <InfoTooltip content="Control the detail level of responses. Concise gives brief, focused answers. Detailed provides comprehensive explanations with more context and depth." />
+                Mode
+                <InfoTooltip content="What kind of reply you want. Ask answers the question. Brainstorm generates possibilities. Develop builds out an idea you state. Refine tightens one. Critique argues against it. Draft turns it into writing. This changes how the answer is written, not which papers are searched." />
               </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() =>
-                    dispatch({ type: 'SET_QUERY_OPTIONS', payload: { responseMode: 'concise' } })
-                  }
-                  className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
-                    queryOptions.responseMode === 'concise'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:border-blue-400'
-                  }`}
-                >
-                  <AlignLeft className="w-4 h-4" />
-                  Concise
-                </button>
-                <button
-                  onClick={() =>
-                    dispatch({ type: 'SET_QUERY_OPTIONS', payload: { responseMode: 'detailed' } })
-                  }
-                  className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
-                    queryOptions.responseMode === 'detailed'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:border-blue-400'
-                  }`}
-                >
-                  <BookOpen className="w-4 h-4" />
-                  Detailed
-                </button>
+              <div className="flex flex-wrap gap-2">
+                {ANSWER_MODES.map((value: AnswerMode) => (
+                  <button
+                    key={value}
+                    title={ANSWER_MODE_DESCRIPTIONS[value]}
+                    onClick={() =>
+                      dispatch({ type: 'SET_QUERY_OPTIONS', payload: { mode: value } })
+                    }
+                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                      queryOptions.mode === value
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                    }`}
+                  >
+                    {ANSWER_MODE_LABELS[value]}
+                  </button>
+                ))}
               </div>
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                {ANSWER_MODE_DESCRIPTIONS[queryOptions.mode]}
+              </p>
             </div>
 
             {/* Query Type - SECOND */}
             <div className="mb-4">
               <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Query Type
-                <InfoTooltip content="Select how the system should interpret your question. Auto-detect analyzes your query to choose the best approach automatically." />
+                <InfoTooltip content="Which chunk types the retriever searches. Auto-detect picks a strategy from your question. This only affects retrieval - use Mode to change how the answer is written." />
               </label>
               <div className="flex flex-wrap gap-2">
                 {QUERY_TYPES.map(({ value, label }) => (
@@ -191,7 +192,7 @@ export function QueryInput() {
             </div>
 
             {/* Parameters */}
-            <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               <div>
                 <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Results (Top-K)
@@ -231,6 +232,29 @@ export function QueryInput() {
                   className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {EFFORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Answer Length
+                  <InfoTooltip content="How much room the answer may take. Concise keeps it to the answer and its evidence. Detailed allows mechanism and conditions. Neither one brings back section headings or report structure - and neither drops a number to save space." />
+                </label>
+                <select
+                  value={queryOptions.responseMode}
+                  onChange={(e) =>
+                    dispatch({
+                      type: 'SET_QUERY_OPTIONS',
+                      payload: { responseMode: e.target.value as ResponseMode },
+                    })
+                  }
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {RESPONSE_MODE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>

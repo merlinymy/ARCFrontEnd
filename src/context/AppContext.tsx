@@ -579,6 +579,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             queryType: (prefs.query_type as QueryType | 'auto') || 'auto',
             topK: prefs.top_k,
             effort: (prefs.effort as EffortLevel) || 'high',
+            // Stance is per-conversation, not a stored user preference, so it
+            // resets to the default here and is restored by selectConversation.
+            mode: DEFAULT_QUERY_OPTIONS.mode,
             paperFilter: [],
             sectionFilter: null,
             maxChunksPerPaper: prefs.max_chunks_per_paper ?? 'auto',
@@ -676,12 +679,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         messages: [],
         createdAt: new Date(),
         updatedAt: new Date(),
+        mode: state.queryOptions.mode,
       };
       dispatch({ type: 'CREATE_CONVERSATION', payload: conversation });
 
       // Persist new conversation to backend
       try {
-        await api.createConversation(conversationId, title);
+        await api.createConversation(conversationId, title, state.queryOptions.mode);
       } catch (error) {
         console.error('Failed to create conversation in backend:', error);
         // Continue anyway - conversation exists locally
@@ -738,6 +742,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       // Log query options being sent to API
       console.log('[Query] Submitting with options:', {
+        mode: state.queryOptions.mode,
         responseMode: state.queryOptions.responseMode,
         enableGeneralKnowledge: state.queryOptions.enableGeneralKnowledge,
         enableWebSearch: state.queryOptions.enableWebSearch,
@@ -977,6 +982,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           enableHyde: state.queryOptions.enableHyde,
           enableExpansion: state.queryOptions.enableExpansion,
           enableCitationCheck: state.queryOptions.enableCitationCheck,
+          mode: state.queryOptions.mode,
           responseMode: state.queryOptions.responseMode,
           enableGeneralKnowledge: state.queryOptions.enableGeneralKnowledge,
           enableWebSearch: state.queryOptions.enableWebSearch,
@@ -1086,6 +1092,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // (removes stale cache issue where messages saved after frontend closed aren't loaded)
     try {
       const fullConv = await api.getConversation(id);
+
+      // Restore the stance this thread was last held in, so reopening a
+      // critique thread does not silently answer in Ask mode.
+      if (fullConv.mode) {
+        dispatch({ type: 'SET_QUERY_OPTIONS', payload: { mode: fullConv.mode } });
+      }
+
       const messages: Message[] = (fullConv.messages || []).map((msg) => {
         // Determine message type from metadata or role
         let messageType: 'query' | 'response' | 'web_search' = 'response';

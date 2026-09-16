@@ -10,6 +10,8 @@ import type {
   BatchUploadInitResponse,
   BatchStatusResponse,
   BatchUploadSSEEvent,
+  AnswerMode,
+  PromptGroup,
 } from '../types';
 import { getAuthToken } from '../context/AuthContext';
 
@@ -121,6 +123,7 @@ export interface CompleteEvent {
   reranked_count: number;
   warnings: string[];
   citation_checks: QueryResponse['citation_checks'];
+  mode: AnswerMode;
   response_mode: 'concise' | 'detailed';
   used_general_knowledge: boolean;
   used_web_search: boolean;
@@ -177,6 +180,7 @@ export async function queryPapers(
     enableHyde?: boolean;
     enableExpansion?: boolean;
     enableCitationCheck?: boolean;
+    mode?: AnswerMode;
     responseMode?: 'concise' | 'detailed';
     enableGeneralKnowledge?: boolean;
     enableWebSearch?: boolean;
@@ -201,6 +205,7 @@ export async function queryPapers(
       enable_hyde: options?.enableHyde ?? null,
       enable_expansion: options?.enableExpansion ?? null,
       enable_citation_check: options?.enableCitationCheck ?? null,
+      mode: options?.mode ?? 'ask',
       response_mode: options?.responseMode ?? 'detailed',
       enable_general_knowledge: options?.enableGeneralKnowledge ?? true,
       enable_web_search: options?.enableWebSearch ?? false,
@@ -228,6 +233,7 @@ export async function queryPapersStream(
     enableHyde?: boolean;
     enableExpansion?: boolean;
     enableCitationCheck?: boolean;
+    mode?: AnswerMode;
     responseMode?: 'concise' | 'detailed';
     enableGeneralKnowledge?: boolean;
     enableWebSearch?: boolean;
@@ -245,6 +251,7 @@ export async function queryPapersStream(
     enable_hyde: options?.enableHyde ?? null,
     enable_expansion: options?.enableExpansion ?? null,
     enable_citation_check: options?.enableCitationCheck ?? null,
+    mode: options?.mode ?? 'ask',
     response_mode: options?.responseMode ?? 'detailed',
     enable_general_knowledge: options?.enableGeneralKnowledge ?? true,
     enable_web_search: options?.enableWebSearch ?? false,
@@ -253,6 +260,7 @@ export async function queryPapersStream(
 
   // Log the request body for debugging
   console.log('[API] queryPapersStream request body:', {
+    mode: requestBody.mode,
     response_mode: requestBody.response_mode,
     enable_general_knowledge: requestBody.enable_general_knowledge,
     enable_web_search: requestBody.enable_web_search,
@@ -973,6 +981,8 @@ export interface ConversationMessage {
 export interface Conversation {
   id: string;
   title?: string;
+  /** Response stance this thread was last queried with. */
+  mode?: AnswerMode;
   created_at: string;
   updated_at: string;
   messages?: ConversationMessage[];
@@ -992,26 +1002,35 @@ export async function getConversation(id: string): Promise<Conversation> {
   return handleResponse(response);
 }
 
-export async function createConversation(id: string, title?: string): Promise<Conversation> {
+export async function createConversation(
+  id: string,
+  title?: string,
+  mode?: AnswerMode
+): Promise<Conversation> {
   const response = await fetch(`${API_BASE}/conversations`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
     },
-    body: JSON.stringify({ id, title }),
+    body: JSON.stringify({ id, title, mode }),
   });
   return handleResponse(response);
 }
 
-export async function updateConversation(id: string, title: string): Promise<Conversation> {
+/** Update a conversation. Omitted fields are left as they are server-side. */
+export async function updateConversation(
+  id: string,
+  title?: string,
+  mode?: AnswerMode
+): Promise<Conversation> {
   const response = await fetch(`${API_BASE}/conversations/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
     },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, mode }),
   });
   return handleResponse(response);
 }
@@ -1126,19 +1145,11 @@ export async function updateUserPreferences(
   return handleResponse(response);
 }
 
-// System Prompts API
+// System Prompts API. Grouped base / stance / addendums.
 export interface SystemPromptsResponse {
-  defaults: {
-    concise: Record<string, string>;
-    detailed: Record<string, string>;
-    addendums: {
-      general_knowledge: string;
-      web_search: string;
-      pdf_upload: string;
-    };
-  };
-  custom: Record<string, Record<string, string>> | null;
-  query_types: string[];
+  defaults: Record<PromptGroup, Record<string, string>>;
+  custom: Partial<Record<PromptGroup, Record<string, string>>> | null;
+  prompt_types: Record<PromptGroup, string[]>;
 }
 
 export async function getSystemPrompts(): Promise<SystemPromptsResponse> {
@@ -1149,7 +1160,7 @@ export async function getSystemPrompts(): Promise<SystemPromptsResponse> {
 }
 
 export async function updateSystemPrompt(
-  mode: 'concise' | 'detailed' | 'addendums',
+  mode: PromptGroup,
   promptType: string,
   content: string
 ): Promise<SystemPromptsResponse> {

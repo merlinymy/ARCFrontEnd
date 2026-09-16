@@ -49,6 +49,7 @@ export interface QueryResponse {
   reranked_count: number;
   warnings: string[];
   citation_checks: CitationCheck[];
+  mode: AnswerMode;
   response_mode: ResponseMode;
   used_general_knowledge: boolean;
   used_web_search: boolean;
@@ -84,6 +85,8 @@ export interface Conversation {
   messages: Message[];
   createdAt: Date;
   updatedAt: Date;
+  // Response stance this thread was last used in; restored on select.
+  mode?: AnswerMode;
 }
 
 // Paper in the library
@@ -217,6 +220,43 @@ export interface DeleteResponse {
 // Response mode for detail level
 export type ResponseMode = 'concise' | 'detailed';
 
+// Response stance - what kind of reply the user wants this turn.
+// Orthogonal to retrieval (query type) and to effort (how hard the model thinks).
+export type AnswerMode =
+  | 'ask'
+  | 'brainstorm'
+  | 'develop'
+  | 'refine'
+  | 'critique'
+  | 'draft';
+
+export const ANSWER_MODES: AnswerMode[] = [
+  'ask',
+  'brainstorm',
+  'develop',
+  'refine',
+  'critique',
+  'draft',
+];
+
+export const ANSWER_MODE_LABELS: Record<AnswerMode, string> = {
+  ask: 'Ask',
+  brainstorm: 'Brainstorm',
+  develop: 'Develop',
+  refine: 'Refine',
+  critique: 'Critique',
+  draft: 'Draft',
+};
+
+export const ANSWER_MODE_DESCRIPTIONS: Record<AnswerMode, string> = {
+  ask: 'Answer the question, conversationally, leading with the answer.',
+  brainstorm: 'Generate possibilities and directions - what has been tried, what has not.',
+  develop: 'Take a stated idea and build it out into something workable.',
+  refine: 'Tighten an existing idea and sharpen how it is framed.',
+  critique: 'Argue against it and find the weaknesses a reviewer would.',
+  draft: 'Start turning it into writing - an outline, a section, a set of aims.',
+};
+
 // How much care the model spends on the answer (depth, not creativity)
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -225,6 +265,7 @@ export interface QueryOptions {
   queryType: QueryType | 'auto';
   topK: number;
   effort: EffortLevel;
+  mode: AnswerMode; // Response stance - selects the prompt's stance modifier
   paperFilter: string[];
   sectionFilter: string | null;
   enableHyde: boolean;
@@ -457,6 +498,7 @@ export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
   queryType: 'auto',
   topK: 15,
   effort: 'high',
+  mode: 'ask',
   paperFilter: [],
   sectionFilter: null,
   enableHyde: true,
@@ -469,31 +511,27 @@ export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
   enablePdfUpload: false,
 };
 
-// System prompts types for customization
+// System prompts types for customization.
+// Grouped base / stance / addendums since the 16 query-type prompts were
+// replaced by one base prompt plus a stance modifier.
 export interface SystemPromptsData {
-  defaults: {
-    concise: Record<string, string>;
-    detailed: Record<string, string>;
-    addendums: {
-      general_knowledge: string;
-      web_search: string;
-    };
-  };
-  custom: {
-    concise?: Record<string, string>;
-    detailed?: Record<string, string>;
-    addendums?: {
-      general_knowledge?: string;
-      web_search?: string;
-    };
-  } | null;
-  query_types: string[];
+  defaults: Record<PromptGroup, Record<string, string>>;
+  custom: Partial<Record<PromptGroup, Record<string, string>>> | null;
+  prompt_types: Record<PromptGroup, string[]>;
 }
 
-// Prompt mode for editing
-export type PromptMode = 'concise' | 'detailed' | 'addendums';
+// Editable prompt group
+export type PromptGroup = 'base' | 'stance' | 'addendums';
 
-// Query type labels for UI display
+// Labels for the editable slots inside the 'base' group
+export const BASE_PROMPT_LABELS: Record<string, string> = {
+  base: 'Base prompt (invariants)',
+  concise: 'Length dial - Concise',
+  detailed: 'Length dial - Detailed',
+};
+
+// Query type labels for UI display. Query type now only steers retrieval;
+// it no longer selects a prompt.
 export const QUERY_TYPE_LABELS: Record<string, string> = {
   factual: 'Factual',
   framing: 'Framing',

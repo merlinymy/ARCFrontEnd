@@ -15,24 +15,29 @@ import {
   resetPrompt,
   resetAllPrompts,
 } from '../services/api';
-import { QUERY_TYPE_LABELS, ADDENDUM_LABELS } from '../types';
+import { ADDENDUM_LABELS, ANSWER_MODE_LABELS, BASE_PROMPT_LABELS } from '../types';
+import type { AnswerMode, PromptGroup } from '../types';
 
-type TabMode = 'concise' | 'detailed' | 'addendums';
+type TabMode = PromptGroup;
 
 // Local type definition to avoid import issues
 interface SystemPromptsResponse {
-  defaults: {
-    concise: Record<string, string>;
-    detailed: Record<string, string>;
-    addendums: {
-      general_knowledge: string;
-      web_search: string;
-      pdf_upload: string;
-    };
-  };
-  custom: Record<string, Record<string, string>> | null;
-  query_types: string[];
+  defaults: Record<TabMode, Record<string, string>>;
+  custom: Partial<Record<TabMode, Record<string, string>>> | null;
+  prompt_types: Record<TabMode, string[]>;
 }
+
+const TAB_ORDER: TabMode[] = ['base', 'stance', 'addendums'];
+const TAB_LABELS: Record<TabMode, string> = {
+  base: 'Base',
+  stance: 'Stance',
+  addendums: 'Special',
+};
+const TAB_BLURBS: Record<TabMode, string> = {
+  base: 'The invariants every answer obeys, plus the two length dials. Editing the base prompt changes every answer in every mode.',
+  stance: 'One modifier per mode, composed onto the base prompt. Only the selected mode is sent.',
+  addendums: 'Appended for particular features rather than for a mode.',
+};
 
 export function PromptsPage() {
   const [loading, setLoading] = useState(true);
@@ -42,8 +47,8 @@ export function PromptsPage() {
   const [promptsData, setPromptsData] = useState<SystemPromptsResponse | null>(null);
 
   // UI state
-  const [activeTab, setActiveTab] = useState<TabMode>('detailed');
-  const [selectedPrompt, setSelectedPrompt] = useState<string>('factual');
+  const [activeTab, setActiveTab] = useState<TabMode>('base');
+  const [selectedPrompt, setSelectedPrompt] = useState<string>('base');
   const [editedContent, setEditedContent] = useState<string>('');
   const [hasChanges, setHasChanges] = useState(false);
   const [showDefaultPreview, setShowDefaultPreview] = useState(false);
@@ -72,17 +77,12 @@ export function PromptsPage() {
   const getEffectivePrompt = useCallback(
     (data: SystemPromptsResponse, mode: TabMode, promptType: string): string => {
       // Check for custom prompt first
-      if (data.custom && mode in data.custom) {
-        const modeCustom = data.custom[mode] as Record<string, string> | undefined;
-        if (modeCustom && promptType in modeCustom) {
-          return modeCustom[promptType];
-        }
+      const modeCustom = data.custom?.[mode];
+      if (modeCustom && promptType in modeCustom) {
+        return modeCustom[promptType];
       }
       // Fall back to default
-      if (mode === 'addendums') {
-        return data.defaults.addendums[promptType as keyof typeof data.defaults.addendums] || '';
-      }
-      return data.defaults[mode][promptType] || '';
+      return data.defaults[mode]?.[promptType] || '';
     },
     []
   );
@@ -90,8 +90,7 @@ export function PromptsPage() {
   // Check if prompt is customized
   const isCustomized = useCallback(
     (data: SystemPromptsResponse, mode: TabMode, promptType: string): boolean => {
-      if (!data.custom || !(mode in data.custom)) return false;
-      const modeCustom = data.custom[mode] as Record<string, string> | undefined;
+      const modeCustom = data.custom?.[mode];
       return modeCustom !== undefined && promptType in modeCustom;
     },
     []
@@ -99,12 +98,8 @@ export function PromptsPage() {
 
   // Get default prompt for comparison
   const getDefaultPrompt = useCallback(
-    (data: SystemPromptsResponse, mode: TabMode, promptType: string): string => {
-      if (mode === 'addendums') {
-        return data.defaults.addendums[promptType as keyof typeof data.defaults.addendums] || '';
-      }
-      return data.defaults[mode][promptType] || '';
-    },
+    (data: SystemPromptsResponse, mode: TabMode, promptType: string): string =>
+      data.defaults[mode]?.[promptType] || '',
     []
   );
 
@@ -124,7 +119,7 @@ export function PromptsPage() {
       return;
     }
     setActiveTab(tab);
-    const firstPrompt = tab === 'addendums' ? 'general_knowledge' : 'factual';
+    const firstPrompt = promptsData?.prompt_types?.[tab]?.[0] ?? 'base';
     setSelectedPrompt(firstPrompt);
     if (promptsData) {
       updateEditorContent(promptsData, tab, firstPrompt);
@@ -209,19 +204,14 @@ export function PromptsPage() {
   };
 
   // Get list of prompts for current tab
-  const getPromptList = (): string[] => {
-    if (activeTab === 'addendums') {
-      return ['general_knowledge', 'web_search', 'pdf_upload'];
-    }
-    return promptsData?.query_types || [];
-  };
+  const getPromptList = (): string[] =>
+    promptsData?.prompt_types?.[activeTab] ?? [];
 
   // Get label for prompt
   const getPromptLabel = (promptType: string): string => {
-    if (activeTab === 'addendums') {
-      return ADDENDUM_LABELS[promptType] || promptType;
-    }
-    return QUERY_TYPE_LABELS[promptType] || promptType;
+    if (activeTab === 'addendums') return ADDENDUM_LABELS[promptType] || promptType;
+    if (activeTab === 'base') return BASE_PROMPT_LABELS[promptType] || promptType;
+    return ANSWER_MODE_LABELS[promptType as AnswerMode] || promptType;
   };
 
   if (loading) {
@@ -284,7 +274,7 @@ export function PromptsPage() {
           {/* Tabs */}
           <div className="flex-shrink-0 p-2 border-b border-gray-200 dark:border-gray-700">
             <div className="flex gap-1">
-              {(['detailed', 'concise', 'addendums'] as const).map((tab) => (
+              {TAB_ORDER.map((tab) => (
                 <button
                   key={tab}
                   onClick={() => handleTabChange(tab)}
@@ -294,7 +284,7 @@ export function PromptsPage() {
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
-                  {tab === 'addendums' ? 'Special' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {TAB_LABELS[tab]}
                 </button>
               ))}
             </div>
@@ -342,11 +332,13 @@ export function PromptsPage() {
                   {getPromptLabel(selectedPrompt)}
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {activeTab === 'detailed' && 'Comprehensive prompt for detailed responses'}
-                  {activeTab === 'concise' && 'Brief prompt for concise responses'}
-                  {activeTab === 'addendums' && selectedPrompt === 'general_knowledge' && 'Appended when general knowledge is enabled'}
-                  {activeTab === 'addendums' && selectedPrompt === 'web_search' && 'Used for web search functionality'}
-                  {activeTab === 'addendums' && selectedPrompt === 'pdf_upload' && 'Appended when PDF upload is enabled - guides Claude on using both full PDFs and RAG chunks'}
+                  {activeTab === 'addendums' && selectedPrompt === 'general_knowledge'
+                    ? 'Appended when general knowledge is enabled'
+                    : activeTab === 'addendums' && selectedPrompt === 'web_search'
+                    ? 'Used for the separate web search call'
+                    : activeTab === 'addendums' && selectedPrompt === 'pdf_upload'
+                    ? 'Appended when full PDFs are sent alongside the RAG chunks'
+                    : TAB_BLURBS[activeTab]}
                 </p>
               </div>
               <div className="flex items-center gap-2">
