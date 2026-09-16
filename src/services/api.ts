@@ -169,7 +169,7 @@ export async function queryPapers(
   question: string,
   options?: {
     topK?: number;
-    temperature?: number;
+    effort?: string;
     paperIds?: string[];
     maxChunksPerPaper?: number | 'auto';
     conversationId?: string;
@@ -193,7 +193,7 @@ export async function queryPapers(
     body: JSON.stringify({
       question,
       top_k: options?.topK ?? 10,
-      temperature: options?.temperature ?? 0.7,
+      effort: options?.effort ?? 'high',
       paper_ids: options?.paperIds?.length ? options.paperIds : null,
       max_chunks_per_paper: options?.maxChunksPerPaper === 'auto' ? null : options?.maxChunksPerPaper,
       conversation_id: options?.conversationId ?? null,
@@ -220,7 +220,7 @@ export async function queryPapersStream(
   onProgress: (event: StreamEvent) => void,
   options?: {
     topK?: number;
-    temperature?: number;
+    effort?: string;
     paperIds?: string[];
     maxChunksPerPaper?: number | 'auto';
     conversationId?: string;
@@ -237,7 +237,7 @@ export async function queryPapersStream(
   const requestBody = {
     question,
     top_k: options?.topK ?? 10,
-    temperature: options?.temperature ?? 0.7,
+    effort: options?.effort ?? 'high',
     paper_ids: options?.paperIds?.length ? options.paperIds : null,
     max_chunks_per_paper: options?.maxChunksPerPaper === 'auto' ? null : options?.maxChunksPerPaper,
     conversation_id: options?.conversationId ?? null,
@@ -336,8 +336,11 @@ export async function getStats(): Promise<StatsResponse> {
 }
 
 // Clear conversation
-export async function clearConversation(): Promise<{ status: string; message: string }> {
-  const response = await fetch(`${API_BASE}/conversation/clear`, {
+export async function clearConversation(
+  conversationId?: string
+): Promise<{ status: string; message: string }> {
+  const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : '';
+  const response = await fetch(`${API_BASE}/conversation/clear${query}`, {
     method: 'POST',
   });
   return handleResponse<{ status: string; message: string }>(response);
@@ -1091,7 +1094,7 @@ export async function getMemoryContext(): Promise<{ context: string }> {
 export interface UserPreferencesResponse {
   query_type: string;
   top_k: number;
-  temperature: number;
+  effort: string;
   max_chunks_per_paper: number | null;
   response_mode: 'concise' | 'detailed';
   enable_hyde: boolean;

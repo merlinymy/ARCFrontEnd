@@ -217,11 +217,14 @@ export interface DeleteResponse {
 // Response mode for detail level
 export type ResponseMode = 'concise' | 'detailed';
 
+// How much care the model spends on the answer (depth, not creativity)
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 // Query options for advanced settings
 export interface QueryOptions {
   queryType: QueryType | 'auto';
   topK: number;
-  temperature: number;
+  effort: EffortLevel;
   paperFilter: string[];
   sectionFilter: string | null;
   enableHyde: boolean;
@@ -344,6 +347,7 @@ export type PipelineStepName =
   | 'retrieval'
   | 'reranking'
   | 'generation'
+  | 'thinking_chunk'
   | 'answer_chunk'
   | 'answer_complete'
   | 'citation_verified'
@@ -436,6 +440,7 @@ export interface AppState {
   selectedPaperId: string | null;
   viewingPdfId: string | null;
   webSearchProgress: string | null; // Current web search progress message
+  thinkingProgress: string | null; // Summarized model reasoning streamed during generation
   toasts: ToastMessage[]; // Toast notifications
 
   // Batch upload
@@ -451,7 +456,7 @@ export interface AppState {
 export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
   queryType: 'auto',
   topK: 15,
-  temperature: 0.3,
+  effort: 'high',
   paperFilter: [],
   sectionFilter: null,
   enableHyde: true,

@@ -21,7 +21,15 @@ function StepIcon({ status }: { status: PipelineStepInfo['status'] }) {
 }
 
 // Pipeline progress display component
-function PipelineProgress({ steps, webSearchProgress }: { steps: PipelineStepInfo[]; webSearchProgress?: string | null }) {
+function PipelineProgress({
+  steps,
+  webSearchProgress,
+  thinkingProgress,
+}: {
+  steps: PipelineStepInfo[];
+  webSearchProgress?: string | null;
+  thinkingProgress?: string | null;
+}) {
   const activeStep = steps.find((s) => s.status === 'active');
 
   return (
@@ -43,15 +51,20 @@ function PipelineProgress({ steps, webSearchProgress }: { steps: PipelineStepInf
 
       {/* Current step indicator */}
       {activeStep && !webSearchProgress && (
-        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
-          <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
-          <div>
+        <div className="flex items-start gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+          <Loader2 className="w-5 h-5 mt-0.5 shrink-0 text-blue-500 animate-spin" />
+          <div className="min-w-0">
             <div className="font-medium text-gray-900 dark:text-gray-100">
               {activeStep.label}
             </div>
             <div className="text-sm text-gray-500 dark:text-gray-400">
               {activeStep.description}
             </div>
+            {thinkingProgress && (
+              <div className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-sm text-gray-500 dark:text-gray-400 italic">
+                {thinkingProgress}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -120,7 +133,7 @@ interface ConversationThreadProps {
 
 export function ConversationThread({ onScroll }: ConversationThreadProps) {
   const { state, setActivePage, openUploadPanel } = useApp();
-  const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState, webSearchProgress } = state;
+  const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState, webSearchProgress, thinkingProgress } = state;
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -297,7 +310,7 @@ export function ConversationThread({ onScroll }: ConversationThreadProps) {
 
                 {/* Pipeline progress or simple loading */}
                 {pipelineProgress ? (
-                  <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} />
+                  <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} thinkingProgress={thinkingProgress} />
                 ) : (
                   <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
                     <div className="flex items-center gap-3">
@@ -316,7 +329,7 @@ export function ConversationThread({ onScroll }: ConversationThreadProps) {
         {/* Show loading state when isLoading but no pending message */}
         {isLoading && messageGroups.length > 0 && messageGroups[messageGroups.length - 1].responses.length > 0 && (
           pipelineProgress ? (
-            <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} />
+            <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} thinkingProgress={thinkingProgress} />
           ) : (
             <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
               <div className="flex items-center gap-3">

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { InfoTooltip } from './Tooltip';
-import type { QueryType } from '../types';
+import type { EffortLevel, QueryType } from '../types';
 
 const QUERY_TYPES: { value: QueryType | 'auto'; label: string }[] = [
   { value: 'auto', label: 'Auto-detect (Recommended)' },
@@ -30,7 +30,13 @@ const QUERY_TYPES: { value: QueryType | 'auto'; label: string }[] = [
 ];
 
 const TOP_K_OPTIONS = [5, 10, 15, 20, 30, 50];
-const TEMPERATURE_OPTIONS = [0.0, 0.1, 0.3, 0.5, 0.7, 1.0];
+const EFFORT_OPTIONS: { value: EffortLevel; label: string }[] = [
+  { value: 'low', label: 'Low (fastest)' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High (recommended)' },
+  { value: 'xhigh', label: 'Extra high' },
+  { value: 'max', label: 'Max (slowest)' },
+];
 
 export function QueryInput() {
   const { state, dispatch, submitQuery, clearConversation } = useApp();
@@ -211,22 +217,22 @@ export function QueryInput() {
 
               <div>
                 <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Temperature
-                  <InfoTooltip content="Controls response creativity. Lower values (0.0-0.3) give precise, factual answers. Higher values (0.5-1.0) allow more creative, varied responses. Use low for citations, higher for summaries." />
+                  Answer Depth
+                  <InfoTooltip content="How much care the model spends on the answer. Low is fastest and cheapest, good for simple lookups. High is the recommended balance. Extra high and Max reason longer and read the sources more carefully, at higher latency and cost. This is a depth setting, not a creativity setting." />
                 </label>
                 <select
-                  value={queryOptions.temperature}
+                  value={queryOptions.effort}
                   onChange={(e) =>
                     dispatch({
                       type: 'SET_QUERY_OPTIONS',
-                      payload: { temperature: parseFloat(e.target.value) },
+                      payload: { effort: e.target.value as EffortLevel },
                     })
                   }
                   className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {TEMPERATURE_OPTIONS.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  {EFFORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
                 </select>

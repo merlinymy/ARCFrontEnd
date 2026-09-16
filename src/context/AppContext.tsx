@@ -13,6 +13,7 @@ import type {
   Message,
   QueryOptions,
   QueryType,
+  EffortLevel,
   HealthStatus,
   StatsResponse,
   PipelineStepInfo,
@@ -56,6 +57,7 @@ const initialState: AppState = {
   selectedPaperId: null,
   viewingPdfId: null,
   webSearchProgress: null,
+  thinkingProgress: null,
   // Batch upload
   activeBatchUpload: null,
   isUploadPanelOpen: false,
@@ -116,6 +118,7 @@ type Action =
   | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; message: Message } }
   // Web search actions
   | { type: 'SET_WEB_SEARCH_PROGRESS'; payload: string | null }
+  | { type: 'SET_THINKING_PROGRESS'; payload: string | null }
   | { type: 'APPEND_WEB_SEARCH_CHUNK'; payload: { conversationId: string; messageId: string; chunk: string } }
   // Toast actions
   | { type: 'ADD_TOAST'; payload: Omit<ToastMessage, 'id'> }
@@ -476,6 +479,9 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'SET_WEB_SEARCH_PROGRESS':
       return { ...state, webSearchProgress: action.payload };
 
+    case 'SET_THINKING_PROGRESS':
+      return { ...state, thinkingProgress: action.payload };
+
     case 'APPEND_WEB_SEARCH_CHUNK':
       return {
         ...state,
@@ -572,7 +578,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           payload: {
             queryType: (prefs.query_type as QueryType | 'auto') || 'auto',
             topK: prefs.top_k,
-            temperature: prefs.temperature,
+            effort: (prefs.effort as EffortLevel) || 'high',
             paperFilter: [],
             sectionFilter: null,
             maxChunksPerPaper: prefs.max_chunks_per_paper ?? 'auto',
@@ -600,7 +606,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await updateUserPreferences({
           query_type: state.queryOptions.queryType,
           top_k: state.queryOptions.topK,
-          temperature: state.queryOptions.temperature,
+          effort: state.queryOptions.effort,
           max_chunks_per_paper: state.queryOptions.maxChunksPerPaper === 'auto' ? null : state.queryOptions.maxChunksPerPaper,
           response_mode: state.queryOptions.responseMode,
           enable_hyde: state.queryOptions.enableHyde,
@@ -725,6 +731,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       let completedSteps: Set<PipelineStepName> = new Set();
       let streamedContent = '';
+      let streamedThinking = '';
       let streamedWebSearchContent = '';
       let webSearchMessageId: string | null = null;
       const streamedCitations: CitationCheck[] = [];
@@ -750,6 +757,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
               const chunk = data.chunk as string;
               streamedContent += chunk;
               dispatch({ type: 'APPEND_STREAMING_CHUNK', payload: chunk });
+              // The model has started writing the answer; stop showing reasoning
+              if (streamedThinking) {
+                streamedThinking = '';
+                dispatch({ type: 'SET_THINKING_PROGRESS', payload: null });
+              }
+              return;
+            }
+
+            // Handle summarized reasoning - kept out of the answer text
+            if (stepName === 'thinking_chunk' && data?.chunk) {
+              streamedThinking += data.chunk as string;
+              dispatch({ type: 'SET_THINKING_PROGRESS', payload: streamedThinking });
               return;
             }
 
@@ -950,7 +969,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         },
         {
           topK: state.queryOptions.topK,
-          temperature: state.queryOptions.temperature,
+          effort: state.queryOptions.effort,
           paperIds: state.queryOptions.paperFilter,
           maxChunksPerPaper: state.queryOptions.maxChunksPerPaper,
           conversationId: conversationId,
@@ -981,6 +1000,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_LOADING', payload: false });
       dispatch({ type: 'SET_CURRENT_QUERY', payload: '' });
       dispatch({ type: 'SET_PIPELINE_PROGRESS', payload: null });
+      dispatch({ type: 'SET_THINKING_PROGRESS', payload: null });
       // Refresh stats to update query count and cache hit rate
       try {
         const stats = await api.getStats();
@@ -1053,6 +1073,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const selectConversation = useCallback(async (id: string) => {
     dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: id });
+
+    // Reset the server-side conversation memory for this thread so follow-up
+    // reference resolution can't carry over from whichever thread was open before
+    try {
+      await api.clearConversation(id);
+    } catch (error) {
+      console.debug('Failed to reset server conversation memory:', error);
+    }
 
     // Always fetch fresh messages from server to ensure we have the latest
     // (removes stale cache issue where messages saved after frontend closed aren't loaded)
