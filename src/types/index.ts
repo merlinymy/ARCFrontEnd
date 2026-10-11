@@ -536,7 +536,7 @@ export interface AppState {
   sidebarOpen: boolean;
   theme: 'light' | 'dark';
   pipelineExpanded: boolean;
-  activePage: 'chat' | 'library' | 'prompts' | 'health';
+  activePage: 'chat' | 'library' | 'bibliography' | 'prompts' | 'health';
   selectedPaperId: string | null;
   viewingPdfId: string | null;
   //: Page to open the PDF viewer at, 1-indexed. Null means page 1.

@@ -2,6 +2,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout, ChatPage, LibraryPage, PdfViewer, LoginPage, HealthStatusPanel } from './components';
 import { PromptsPage } from './components/PromptsPage';
+import { BibliographyPage } from './components/Bibliography';
 import { ToastContainer } from './components/Toast';
 import { BatchUploadPanel } from './components/BatchUploadPanel';
 import { Loader2 } from 'lucide-react';
@@ -15,6 +16,7 @@ function AppContent() {
       <Layout>
         {activePage === 'chat' && <ChatPage />}
         {activePage === 'library' && <LibraryPage />}
+        {activePage === 'bibliography' && <BibliographyPage />}
         {activePage === 'prompts' && <PromptsPage />}
         {activePage === 'health' && <HealthStatusPanel />}
 

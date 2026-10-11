@@ -16,10 +16,10 @@ import type {
 } from '../types';
 import { getAuthToken } from '../context/AuthContext';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 // Helper to get auth headers
-function getAuthHeaders(): HeadersInit {
+export function getAuthHeaders(): HeadersInit {
   const token = getAuthToken();
   if (token) {
     return { Authorization: `Bearer ${token}` };
