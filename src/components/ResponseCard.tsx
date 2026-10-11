@@ -1,281 +1,41 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   Search,
   CheckCircle,
   ChevronDown,
   ChevronUp,
   Clock,
+  Cpu,
   Database,
   Filter,
   Tag,
   AlertTriangle,
+  AlertCircle,
+  ShieldAlert,
+  PauseCircle,
   Globe,
   ExternalLink,
   Image as ImageIcon,
+  BookOpen,
+  UserRound,
+  History as HistoryIcon,
+  Wrench,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { SourceCard } from './SourceCard';
+import { AnswerBody } from './AnswerBody';
+import { EntailmentBadge, EntailmentPending } from './EntailmentBadge';
+import { SourcesPanel } from './SourcesPanel';
 import { FigureView } from './FigureView';
 import { Tooltip } from './Tooltip';
 import { useApp } from '../context/AppContext';
-import type { Message, CitationCheck, Source } from '../types';
+import type { EntailmentLabelValue, Message, Source } from '../types';
+import { ENTAILMENT_PILL_CLASS, ENTAILMENT_TEXT, formatModelName } from '../lib/citations';
+import { describeToolCall } from '../lib/deep';
 
 interface ResponseCardProps {
   queryMessage: Message;
   responseMessage: Message;
-}
-
-// Citation check status
-type CitationStatus = 'checking' | 'verified' | 'partial' | 'weak' | 'not_verified';
-
-// Get citation status from check data
-function getCitationStatus(check: CitationCheck | undefined, isChecking: boolean): CitationStatus {
-  if (isChecking && !check) {
-    return 'checking';
-  }
-  if (!check) {
-    return 'not_verified';
-  }
-  if (check.confidence >= 0.7) {
-    return 'verified';
-  } else if (check.confidence >= 0.3) {
-    return 'partial';
-  } else {
-    return 'weak';
-  }
-}
-
-// Get citation status color classes
-function getCitationStyle(check: CitationCheck | undefined, isChecking: boolean = false): {
-  bg: string;
-  text: string;
-  border: string;
-  label: string;
-  animate: boolean;
-} {
-  const status = getCitationStatus(check, isChecking);
-
-  switch (status) {
-    case 'checking':
-      return {
-        bg: 'bg-blue-100 dark:bg-blue-900/30',
-        text: 'text-blue-700 dark:text-blue-400',
-        border: 'border-blue-300 dark:border-blue-700',
-        label: 'Checking...',
-        animate: true,
-      };
-    case 'verified':
-      return {
-        bg: 'bg-green-100 dark:bg-green-900/30',
-        text: 'text-green-700 dark:text-green-400',
-        border: 'border-green-300 dark:border-green-700',
-        label: 'Verified',
-        animate: false,
-      };
-    case 'partial':
-      return {
-        bg: 'bg-amber-100 dark:bg-amber-900/30',
-        text: 'text-amber-700 dark:text-amber-400',
-        border: 'border-amber-300 dark:border-amber-700',
-        label: 'Partially supported',
-        animate: false,
-      };
-    case 'weak':
-      return {
-        bg: 'bg-red-100 dark:bg-red-900/30',
-        text: 'text-red-700 dark:text-red-400',
-        border: 'border-red-300 dark:border-red-700',
-        label: 'Weak support',
-        animate: false,
-      };
-    default:
-      return {
-        bg: 'bg-gray-100 dark:bg-gray-700',
-        text: 'text-gray-700 dark:text-gray-300',
-        border: 'border-gray-300 dark:border-gray-600',
-        label: 'Not verified',
-        animate: false,
-      };
-  }
-}
-
-// Component to render a single citation with verification status
-function CitationBadge({
-  citationId,
-  check,
-  isChecking = false,
-}: {
-  citationId: number;
-  check: CitationCheck | undefined;
-  isChecking?: boolean;
-}) {
-  const style = getCitationStyle(check, isChecking);
-  const confidence = check ? Math.round(check.confidence * 100) : null;
-
-  const tooltipContent = check ? (
-    <span className="block max-w-xs">
-      <span className="block font-medium mb-1">
-        {style.label} ({confidence}% confidence)
-      </span>
-      <span className="block text-xs opacity-80">{check.explanation}</span>
-    </span>
-  ) : isChecking ? (
-    <span className="block">Verifying citation...</span>
-  ) : (
-    <span className="block max-w-xs">
-      <span className="block font-medium mb-1">Source {citationId}</span>
-      <span className="block text-xs opacity-80">
-        This citation references Source {citationId} from the retrieved documents.
-        {' '}Enable citation verification in settings to check accuracy.
-      </span>
-    </span>
-  );
-
-  return (
-    <Tooltip content={tooltipContent}>
-      <span
-        className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium border cursor-help ${style.bg} ${style.text} ${style.border} ${style.animate ? 'animate-pulse' : ''}`}
-      >
-        Source {citationId}
-        {confidence !== null && (
-          <span className="ml-1 opacity-70">{confidence}%</span>
-        )}
-        {style.animate && (
-          <span className="ml-1">
-            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          </span>
-        )}
-      </span>
-    </Tooltip>
-  );
-}
-
-// Build citation check map from array
-function buildCitationCheckMap(
-  citationChecks: CitationCheck[] | undefined
-): Map<number, CitationCheck> {
-  const checkMap = new Map<number, CitationCheck>();
-  if (citationChecks) {
-    for (const check of citationChecks) {
-      // Group checks by citation_id, keep the one with lowest confidence (most concerning)
-      const existing = checkMap.get(check.citation_id);
-      if (!existing || check.confidence < existing.confidence) {
-        checkMap.set(check.citation_id, check);
-      }
-    }
-  }
-  return checkMap;
-}
-
-// Process text content to replace citation patterns with styled badges
-function processTextWithCitations(
-  text: string,
-  checkMap: Map<number, CitationCheck>,
-  isCheckingCitations: boolean = false
-): React.ReactNode[] {
-  // Pattern to match various citation formats:
-  // - [Source 8, Source 9, Source 10] - multiple sources with "Source" prefix
-  // - [Source 8] - single source with "Source" prefix
-  // - [8, 9, 10] - multiple numbers
-  // - [8] - single number
-  const citationPattern = /\[((?:Source\s*)?\d+(?:\s*,\s*(?:Source\s*)?\d+)*)\]/gi;
-
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match;
-  let keyCounter = 0;
-
-  while ((match = citationPattern.exec(text)) !== null) {
-    // Add text before the citation
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-
-    // Parse citation IDs - extract all numbers from the match
-    // This handles "Source 8, Source 9" and "8, 9" formats
-    const numberPattern = /\d+/g;
-    const ids: number[] = [];
-    let numMatch;
-    while ((numMatch = numberPattern.exec(match[1])) !== null) {
-      ids.push(parseInt(numMatch[0], 10));
-    }
-
-    // Add citation badges
-    ids.forEach((id, idx) => {
-      if (idx > 0) parts.push(', ');
-      const check = checkMap.get(id);
-      // If checking is in progress and we don't have a check for this citation yet, show checking state
-      const showChecking = isCheckingCitations && !check;
-      parts.push(
-        <CitationBadge
-          key={`cite-${keyCounter++}-${id}`}
-          citationId={id}
-          check={check}
-          isChecking={showChecking}
-        />
-      );
-    });
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  // Add remaining text
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  return parts;
-}
-
-// Process React children recursively to highlight citations
-function processChildrenWithCitations(
-  children: React.ReactNode,
-  checkMap: Map<number, CitationCheck>,
-  isCheckingCitations: boolean = false
-): React.ReactNode {
-  if (typeof children === 'string') {
-    return processTextWithCitations(children, checkMap, isCheckingCitations);
-  }
-
-  if (Array.isArray(children)) {
-    return children.map((child, idx) => {
-      if (typeof child === 'string') {
-        return <span key={idx}>{processTextWithCitations(child, checkMap, isCheckingCitations)}</span>;
-      }
-      return child;
-    });
-  }
-
-  return children;
-}
-
-// Create custom markdown components that highlight citations
-function createCitationComponents(checkMap: Map<number, CitationCheck>, isCheckingCitations: boolean = false) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const processChildren = (props: any) => processChildrenWithCitations(props.children, checkMap, isCheckingCitations);
-
-  return {
-    // Process text in paragraphs
-    p: (props: React.HTMLAttributes<HTMLParagraphElement>) => (
-      <p {...props}>{processChildrenWithCitations(props.children, checkMap, isCheckingCitations)}</p>
-    ),
-    // Process text in list items
-    li: (props: React.LiHTMLAttributes<HTMLLIElement>) => (
-      <li {...props}>{processChildrenWithCitations(props.children, checkMap, isCheckingCitations)}</li>
-    ),
-    // Process text in strong/bold
-    strong: (props: React.HTMLAttributes<HTMLElement>) => (
-      <strong {...props}>{processChildren(props)}</strong>
-    ),
-    // Process text in em/italic
-    em: (props: React.HTMLAttributes<HTMLElement>) => (
-      <em {...props}>{processChildren(props)}</em>
-    ),
-  };
 }
 
 interface CitedFigure {
@@ -288,7 +48,7 @@ interface CitedFigure {
 }
 
 /**
- * Figures among the retrieved sources that have a persisted crop, deduped by
+ * Figures among the given sources that have a persisted crop, deduped by
  * (paper, figure) — the same figure arrives as both a caption chunk and a table
  * chunk often enough to matter.
  */
@@ -312,116 +72,381 @@ function collectCitedFigures(sources: Source[]): CitedFigure[] {
   return out;
 }
 
-export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProps) {
-  const [showAllSources, setShowAllSources] = useState(false);
+// ---------------------------------------------------------------------------
+// Footer notes
+// ---------------------------------------------------------------------------
+
+/**
+ * One quiet line in the answer's footer: an icon and a few words, with the
+ * longer reason on hover and focus. Plain grey on purpose; none of these are
+ * errors.
+ */
+function FooterNote({
+  icon,
+  label,
+  reason,
+  tone = 'quiet',
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  reason: string;
+  tone?: 'quiet' | 'warn';
+  onClick?: () => void;
+}) {
+  const color =
+    tone === 'warn'
+      ? 'text-amber-700 dark:text-amber-400'
+      : 'text-gray-500 dark:text-gray-400';
+  const className = `inline-flex items-center gap-1 text-xs ${color} rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`;
+  const body = (
+    <>
+      {icon}
+      {label}
+    </>
+  );
+  return (
+    <Tooltip content={reason}>
+      {onClick ? (
+        <button type="button" onClick={onClick} className={className} aria-label={`${label}. ${reason}`}>
+          {body}
+        </button>
+      ) : (
+        <span tabIndex={0} className={className} title={reason}>
+          {body}
+        </span>
+      )}
+    </Tooltip>
+  );
+}
+
+const ICON = 'w-3.5 h-3.5 shrink-0';
+
+function EntailmentSummary({ message }: { message: Message }) {
+  const { metadata } = message;
+  const citations = metadata?.citations ?? [];
+  if (citations.length === 0) return null;
+
+  const report = metadata?.entailment;
+  if (!report) {
+    return metadata?.entailmentPending ? <EntailmentPending /> : null;
+  }
+
+  if (report.status === 'skipped') return null;
+
+  // The check ran but produced nothing: say so, calmly. Never "verified".
+  if (report.status === 'error') {
+    return (
+      <FooterNote
+        icon={<AlertCircle className={ICON} aria-hidden="true" />}
+        reason={`The citation check did not complete${report.error ? ` (${report.error})` : ''}. The quotes are still exactly what the papers say; they just have not been compared with the claims.`}
+        label="Citation check unavailable"
+      />
+    );
+  }
+
+  const counts: Array<[EntailmentLabelValue, number]> = (
+    ['supported', 'partially_supported', 'unsupported'] as const
+  ).map((label) => [label, report.summary?.[label] ?? 0]);
+  const unchecked = report.summary?.unchecked ?? 0;
+
+  return (
+    <span className="inline-flex items-center gap-1.5 flex-wrap text-xs" aria-label="Citation check">
+      <span className="text-gray-500 dark:text-gray-400">Citation check:</span>
+      {counts
+        .filter(([, n]) => n > 0)
+        .map(([label, n]) => (
+          <span
+            key={label}
+            className={`inline-flex items-center px-1.5 py-0.5 rounded-full border ${ENTAILMENT_PILL_CLASS[label]}`}
+          >
+            {n} {ENTAILMENT_TEXT[label].toLowerCase()}
+          </span>
+        ))}
+      {unchecked > 0 && (
+        <span className="text-gray-500 dark:text-gray-400">{unchecked} not checked</span>
+      )}
+    </span>
+  );
+}
+
+function AnswerFooter({ message }: { message: Message }) {
+  const { setActivePage } = useApp();
+  const m = message.metadata;
+  if (!m) return null;
+
+  const model = formatModelName(m.servedModel);
+  const trimmed = m.history?.trimmed_turns ?? 0;
+  const lookups = m.deep?.tool_calls?.length ?? 0;
+  const papersRead = m.longContext?.papers?.length ?? 0;
+
+  const notes: ReactNode[] = [];
+
+  if (model) {
+    notes.push(
+      <FooterNote
+        key="model"
+        icon={<Cpu className={ICON} aria-hidden="true" />}
+        reason={
+          m.fallbackUsed
+            ? `The first-choice model declined this request${
+                m.fallbackFrom ? ` (${formatModelName(m.fallbackFrom) ?? m.fallbackFrom})` : ''
+              }, so ${model} wrote the whole answer. Nothing in it comes from the declined attempt.`
+            : `This answer was written by ${model}.`
+        }
+        label={m.fallbackUsed ? `Answered by ${model} (fallback)` : `Answered by ${model}`}
+      />
+    );
+  }
+
+  if (m.retrievalMode === 'long_context') {
+    notes.push(
+      <FooterNote
+        key="long"
+        icon={<BookOpen className={ICON} aria-hidden="true" />}
+        reason={`The papers you selected fit in the model's context, so it read ${
+          papersRead === 1 ? 'the full paper' : papersRead > 1 ? `all ${papersRead} papers in full` : 'them in full'
+        } instead of searching for passages.`}
+        label="Read the full papers"
+      />
+    );
+  }
+
+  if (m.retrievalMode === 'agentic' && lookups > 0) {
+    notes.push(
+      <FooterNote
+        key="deep"
+        icon={<Wrench className={ICON} aria-hidden="true" />}
+        reason="This stance searches the library itself, over several steps, before it answers."
+        label={`${lookups} library lookup${lookups === 1 ? '' : 's'}`}
+      />
+    );
+  }
+
+  if (m.hybridFallback) {
+    notes.push(
+      <FooterNote
+        key="hybrid"
+        tone="warn"
+        icon={<AlertTriangle className={ICON} aria-hidden="true" />}
+        reason="Keyword matching was unavailable for this question, so retrieval used meaning-based search only. Passages that hinge on an exact term may have been missed."
+        label="Search was degraded"
+      />
+    );
+  }
+
+  if (m.stopReason === 'max_tokens') {
+    notes.push(
+      <FooterNote
+        key="cut"
+        tone="warn"
+        icon={<AlertTriangle className={ICON} aria-hidden="true" />}
+        reason="The answer reached its length limit and may be cut off. Ask it to continue."
+        label="May be cut off"
+      />
+    );
+  }
+
+  if (trimmed > 0) {
+    notes.push(
+      <FooterNote
+        key="history"
+        icon={<HistoryIcon className={ICON} aria-hidden="true" />}
+        reason={`${trimmed} earlier turn${trimmed === 1 ? ' is' : 's are'} no longer in the model's context (the thread is still shown in full). Start a new conversation, or put what matters in your profile or a project notebook.`}
+        label="Earlier turns trimmed"
+      />
+    );
+  }
+
+  if (m.profileUsed) {
+    notes.push(
+      <FooterNote
+        key="profile"
+        icon={<UserRound className={ICON} aria-hidden="true" />}
+        reason="Your profile was sent with this question. Click to see exactly what it says."
+        onClick={() => setActivePage('profile')}
+        label="Used your profile"
+      />
+    );
+  }
+
+  const entailment = <EntailmentSummary message={message} />;
+
+  return (
+    <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+      {entailment}
+      {notes}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Notices: a refused, failed or unfinished turn is not an answer
+// ---------------------------------------------------------------------------
+
+function AnswerNotice({ message }: { message: Message }) {
+  const m = message.metadata;
+  const status = m?.answerStatus ?? 'error';
+  const calls = m?.deep?.tool_calls ?? [];
+
+  const { icon, title } =
+    status === 'refused'
+      ? {
+          icon: <ShieldAlert className="w-5 h-5 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" aria-hidden="true" />,
+          title: 'The model declined to answer this',
+        }
+      : status === 'incomplete'
+      ? {
+          icon: <PauseCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />,
+          title: 'This run stopped before it finished',
+        }
+      : {
+          icon: <AlertCircle className="w-5 h-5 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" aria-hidden="true" />,
+          title: 'This answer could not be completed',
+        };
+
+  const tone =
+    status === 'incomplete'
+      ? 'bg-amber-50 dark:bg-amber-900/15 border-amber-200 dark:border-amber-800'
+      : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700';
+
+  return (
+    <div role="note" className={`rounded-lg border p-4 ${tone}`}>
+      <div className="flex items-start gap-3">
+        {icon}
+        <div className="min-w-0">
+          <p className="font-medium text-gray-900 dark:text-gray-100">{title}</p>
+          {/* Plain text, not markdown: this is a message from the system, and it
+              carries no citations. */}
+          <p className="mt-1 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
+            {message.content}
+          </p>
+          {status === 'incomplete' && calls.length > 0 && (
+            <details className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+              <summary className="cursor-pointer select-none">
+                What it did before stopping ({calls.length} step{calls.length === 1 ? '' : 's'})
+              </summary>
+              <ul className="mt-2 list-disc pl-5 space-y-0.5">
+                {calls.map((call, i) => (
+                  <li key={i}>
+                    {describeToolCall(call.name, call.input)}
+                    {call.passages > 0 && ` (${call.passages} passage${call.passages === 1 ? '' : 's'})`}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {status === 'incomplete' && (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Nothing here counts as an answer, and it is not carried into the next turn. Ask again,
+              or narrow the question.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Web search
+// ---------------------------------------------------------------------------
+
+function WebSearchCard({ message }: { message: Message }) {
+  const webSearchSources = message.metadata?.webSearchSources || [];
+  return (
+    <div className="animate-fade-in">
+      {/* Web Search Card */}
+      <div className="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+        <div className="flex items-start gap-3 mb-3">
+          <div className="p-2 bg-emerald-100 dark:bg-emerald-800 rounded-lg">
+            <Globe className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 mb-1">
+              Web Search Results
+            </h4>
+            <p className="text-xs text-emerald-600 dark:text-emerald-400">
+              Additional context from the internet
+            </p>
+          </div>
+        </div>
+
+        <div className="markdown-content">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
+        </div>
+
+        {/* Web Search Sources */}
+        {webSearchSources.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-emerald-200 dark:border-emerald-800">
+            <h5 className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mb-2">
+              Sources ({webSearchSources.length})
+            </h5>
+            <div className="space-y-2">
+              {webSearchSources.map((source, index) => (
+                <a
+                  key={index}
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm p-2 rounded-lg bg-white/50 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-800 border border-emerald-100 dark:border-emerald-900 transition-colors group"
+                >
+                  <ExternalLink className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span className="text-emerald-900 dark:text-emerald-100 group-hover:underline truncate">
+                    {source.title}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The answer
+// ---------------------------------------------------------------------------
+
+function AnswerCard({ queryMessage, responseMessage }: ResponseCardProps) {
   const [showPipeline, setShowPipeline] = useState(false);
   const { state } = useApp();
 
   const { metadata } = responseMessage;
+  const status = metadata?.answerStatus ?? 'ok';
+  const isNotice = status !== 'ok';
 
-  // Check if this is a web search message - do this first!
-  const isWebSearch = responseMessage.type === 'web_search' || metadata?.isWebSearch;
+  // Still being written, nothing yet: the thread shows the pipeline progress
+  // below; an empty white box above it would only be noise.
+  const isStreamingEmpty =
+    state.streamingState?.messageId === responseMessage.id && responseMessage.content.length === 0;
 
-  // Render web search message differently (early return)
-  if (isWebSearch) {
-    const webSearchSources = metadata?.webSearchSources || [];
-    return (
-      <div className="animate-fade-in">
-        {/* Web Search Card */}
-        <div className="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
-          <div className="flex items-start gap-3 mb-3">
-            <div className="p-2 bg-emerald-100 dark:bg-emerald-800 rounded-lg">
-              <Globe className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 mb-1">
-                Web Search Results
-              </h4>
-              <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                Additional context from the internet
-              </p>
-            </div>
-          </div>
+  const allSources = useMemo(() => metadata?.sources ?? [], [metadata?.sources]);
+  const citations = metadata?.citations;
 
-          <div className="markdown-content">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {responseMessage.content}
-            </ReactMarkdown>
-          </div>
-
-          {/* Web Search Sources */}
-          {webSearchSources.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-emerald-200 dark:border-emerald-800">
-              <h5 className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mb-2">
-                Sources ({webSearchSources.length})
-              </h5>
-              <div className="space-y-2">
-                {webSearchSources.map((source, index) => (
-                  <a
-                    key={index}
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm p-2 rounded-lg bg-white/50 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-800 border border-emerald-100 dark:border-emerald-900 transition-colors group"
-                  >
-                    <ExternalLink className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="text-emerald-900 dark:text-emerald-100 group-hover:underline truncate">
-                      {source.title}
-                    </span>
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+  // Figures from the sources the answer actually cited (all retrieved sources
+  // for a pre-W3 answer, which has no notion of cited). Rendered in the thread
+  // so the user can look at the actual plot without leaving the conversation --
+  // the image is the evidence, and nothing here interprets it.
+  const citedFigures = useMemo(() => {
+    if (isNotice) return [];
+    if (citations === undefined) return collectCitedFigures(allSources);
+    const indexes = new Set(
+      citations.map((c) => c.source_index).filter((i): i is number => i != null)
     );
-  }
+    return collectCitedFigures(allSources.filter((_, i) => indexes.has(i)));
+  }, [isNotice, citations, allSources]);
 
-  // Regular RAG response - compute all the necessary data
-  const citationChecks = metadata?.citationChecks;
-
-  // Determine if citation checking is in progress for this message
-  // Only show checking animation if citation verification is enabled
-  const isCheckingCitations = useMemo(() => {
-    if (!state.streamingState) return false;
-    if (state.streamingState.messageId !== responseMessage.id) return false;
-    // Only show checking animation if citation checking was enabled for this query
-    if (!state.queryOptions.enableCitationCheck) return false;
-    return state.streamingState.isStreaming && responseMessage.content.length > 0;
-  }, [state.streamingState, responseMessage.id, responseMessage.content.length, state.queryOptions.enableCitationCheck]);
-
-  // Sort sources by relevance score (highest first)
-  const sources = [...(metadata?.sources ?? [])].sort(
-    (a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0)
+  // The hybrid-search warning is shown as a quiet footer note; do not also list it as a box.
+  const warnings = (metadata?.warnings ?? []).filter(
+    (w) => !(metadata?.hybridFallback && /^Hybrid search was unavailable/i.test(w))
   );
-  const visibleSources = showAllSources ? sources : sources.slice(0, 3);
-  const hiddenCount = sources.length - 3;
 
-  // Figures among the retrieved sources that have a persisted crop, deduped by
-  // (paper, figure): the same figure can arrive as both a caption chunk and a
-  // table chunk. Rendered in the thread so the user can look at the actual
-  // plot without leaving the conversation -- the image is the evidence, and
-  // nothing here interprets it.
-  // Plain derivation, not a useMemo: this component already calls its hooks
-  // after an early return, and at <=15 sources the dedupe is free.
-  const citedFigures = collectCitedFigures(sources);
-
-  // Build citation check map for quick lookup
-  const citationCheckMap = useMemo(() => {
-    return buildCitationCheckMap(citationChecks);
-  }, [citationChecks]);
-
-  // Check if there are any failed citations (< 30% confidence)
-  const failedCitations = useMemo(() => {
-    if (!citationChecks) return [];
-    return citationChecks.filter((c) => c.confidence < 0.3);
-  }, [citationChecks]);
-
-  // Create custom markdown components that highlight citations
-  const citationComponents = useMemo(() => {
-    return createCitationComponents(citationCheckMap, isCheckingCitations);
-  }, [citationCheckMap, isCheckingCitations]);
+  const deep = metadata?.deep;
+  const tokens = deep?.usage;
 
   return (
     <div className="animate-fade-in">
@@ -462,49 +487,43 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
       </div>
 
       {/* Answer Card */}
-      <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-        {/* Failed Citations Warning Banner */}
-        {failedCitations.length > 0 && (
-          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
-            <div className="flex items-start gap-2 text-sm">
-              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-medium text-red-700 dark:text-red-400">
-                  {failedCitations.length} citation{failedCitations.length > 1 ? 's' : ''} may not be fully supported by sources
-                </span>
-                <p className="text-red-600 dark:text-red-400 text-xs mt-1">
-                  Hover over highlighted citations to see verification details
-                </p>
+      {!isStreamingEmpty && (
+        <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+          {isNotice ? (
+            <AnswerNotice message={responseMessage} />
+          ) : (
+            <AnswerBody
+              content={responseMessage.content}
+              citations={citations}
+              claims={metadata?.claims}
+              entailment={metadata?.entailment}
+              entailmentPending={Boolean(metadata?.entailmentPending)}
+              legacySources={citations === undefined ? allSources : undefined}
+            />
+          )}
+
+          {/* Pipeline Warnings */}
+          {warnings.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                {warnings.map((warning, index) => (
+                  <div key={index} className="flex items-center gap-2 text-sm">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="text-amber-700 dark:text-amber-400">
+                      {warning}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="markdown-content">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={citationComponents}
-          >
-            {responseMessage.content}
-          </ReactMarkdown>
+          {/* Still streaming: no footer until the answer is final. */}
+          {state.streamingState?.messageId !== responseMessage.id && (
+            <AnswerFooter message={responseMessage} />
+          )}
         </div>
-
-        {/* Pipeline Warnings */}
-        {metadata?.warnings && metadata.warnings.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-              {metadata.warnings.map((warning, index) => (
-                <div key={index} className="flex items-center gap-2 text-sm">
-                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                  <span className="text-amber-700 dark:text-amber-400">
-                    {warning}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Figures from the cited sources */}
       {citedFigures.length > 0 && (
@@ -529,38 +548,23 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
         </div>
       )}
 
-      {/* Sources */}
-      {sources.length > 0 && (
-        <div className="mt-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Sources ({sources.length} retrieved)
-            </h4>
-          </div>
-
-          <div className="space-y-2">
-            {visibleSources.map((source, index) => (
-              <SourceCard key={index} source={source} index={index} />
-            ))}
-          </div>
-
-          {hiddenCount > 0 && (
-            <button
-              onClick={() => setShowAllSources(!showAllSources)}
-              className="mt-3 w-full py-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
-            >
-              {showAllSources
-                ? 'Show less'
-                : `Show ${hiddenCount} more source${hiddenCount > 1 ? 's' : ''}...`}
-            </button>
-          )}
-        </div>
+      {/* Sources: each with the passages it was cited for */}
+      {!isNotice && allSources.length > 0 && (
+        <SourcesPanel
+          sources={allSources}
+          citations={citations}
+          claims={metadata?.claims ?? []}
+          entailment={metadata?.entailment}
+          entailmentPending={Boolean(metadata?.entailmentPending)}
+          retrievalMode={metadata?.retrievalMode}
+        />
       )}
 
       {/* Pipeline Details */}
       <div className="mt-4">
         <button
           onClick={() => setShowPipeline(!showPipeline)}
+          aria-expanded={showPipeline}
           className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
         >
           {showPipeline ? (
@@ -574,6 +578,20 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
         {showPipeline && (
           <div className="mt-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
             <div className="flex flex-wrap gap-4 text-sm">
+              {metadata?.retrievalMode && (
+                <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                  <Search className="w-4 h-4" />
+                  <span>
+                    Mode:{' '}
+                    {metadata.retrievalMode === 'long_context'
+                      ? 'read papers in full'
+                      : metadata.retrievalMode === 'agentic'
+                      ? 'tool loop'
+                      : 'retrieval'}
+                  </span>
+                </div>
+              )}
+
               {metadata?.retrievalCount !== undefined && (
                 <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                   <Database className="w-4 h-4" />
@@ -592,10 +610,10 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
                 </div>
               )}
 
-              {sources.length > 0 && (
+              {citations !== undefined && (
                 <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                   <CheckCircle className="w-4 h-4" />
-                  <span>Cited: {sources.length}</span>
+                  <span>Cited: {citations.length}</span>
                 </div>
               )}
 
@@ -607,10 +625,66 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
                   </span>
                 </div>
               )}
+
+              {deep && (
+                <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                  <Wrench className="w-4 h-4" />
+                  <span>
+                    {deep.turns} turn{deep.turns === 1 ? '' : 's'}, {deep.tool_calls.length} tool call
+                    {deep.tool_calls.length === 1 ? '' : 's'}
+                    {deep.pauses > 0 ? `, ${deep.pauses} pause${deep.pauses === 1 ? '' : 's'}` : ''}
+                  </span>
+                </div>
+              )}
+
+              {tokens && (
+                <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                  <Cpu className="w-4 h-4" />
+                  <span>
+                    Tokens: {(tokens.input_tokens ?? 0).toLocaleString()} in,{' '}
+                    {(tokens.output_tokens ?? 0).toLocaleString()} out
+                    {tokens.cache_read_input_tokens
+                      ? `, ${tokens.cache_read_input_tokens.toLocaleString()} from cache`
+                      : ''}
+                  </span>
+                </div>
+              )}
             </div>
+
+            {deep && deep.tool_calls.length > 0 && (
+              <ul className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-400 list-disc pl-5 space-y-0.5">
+                {deep.tool_calls.map((call, i) => (
+                  <li key={i}>
+                    {describeToolCall(call.name, call.input)}
+                    {call.passages > 0 && ` — ${call.passages} passage${call.passages === 1 ? '' : 's'}`}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* Every label with its reason, for when the footer's counts are not enough. */}
+            {metadata?.entailment && metadata.entailment.labels.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-1.5">
+                {metadata.entailment.labels.map((label) => (
+                  <div
+                    key={`${label.claim_index}:${label.citation_id}`}
+                    className="flex items-baseline gap-2 text-sm text-gray-600 dark:text-gray-400"
+                  >
+                    <span className="shrink-0 tabular-nums">[{label.citation_id}]</span>
+                    <EntailmentBadge label={label} showReason />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
   );
+}
+
+export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProps) {
+  const isWebSearch = responseMessage.type === 'web_search' || responseMessage.metadata?.isWebSearch;
+  if (isWebSearch) return <WebSearchCard message={responseMessage} />;
+  return <AnswerCard queryMessage={queryMessage} responseMessage={responseMessage} />;
 }

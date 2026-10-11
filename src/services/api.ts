@@ -13,6 +13,18 @@ import type {
   AnswerMode,
   PromptGroup,
   PaperFigureList,
+  Citation,
+  Claim,
+  AnswerStatus,
+  RetrievalMode,
+  LongContextInfo,
+  HistoryInfo,
+  DeepInfo,
+  EntailmentReport,
+  ProfileResponse,
+  MemoryFact,
+  Project,
+  NotebookListing,
 } from '../types';
 import { getAuthToken } from '../context/AuthContext';
 
@@ -27,53 +39,30 @@ function getAuthHeaders(): HeadersInit {
   return {};
 }
 
-// Pipeline step types for streaming progress
-export type PipelineStep =
-  | 'rewriting'
-  | 'entities'
-  | 'classification'
-  | 'expansion'
-  | 'hyde'
-  | 'retrieval'
-  | 'reranking'
-  | 'generation'
-  | 'answer_chunk'
-  | 'answer_complete'
-  | 'citation_verified'
-  | 'verification'
-  | 'web_search'
-  | 'web_search_progress';
+// =============================================================================
+// Query stream events (docs/W3_ANSWER_PIPELINE.md section 5)
+// =============================================================================
 
+/**
+ * Every `progress` event: `step` names it, `data` is its payload.
+ *
+ * The ones the answer view acts on, by step:
+ *   answer_chunk      {chunk}  answer text, citation markers included
+ *   citation          one full Citation; always arrives before the answer_chunk holding its marker
+ *   answer_reset      {reason: 'fallback', from_model, to_model} | {reason: 'tool_use'}
+ *   thinking_chunk    {chunk}  summarised reasoning, not part of the answer
+ *   memory            {history_used, profile_used, trimmed_turns, ...}
+ *   long_context      {used, reason, papers, est_tokens}
+ *   tool_call         {name, input, passages}            (deep stances)
+ *   sources_added     {start_index, sources}              (deep stances)
+ *   pause_turn        {turn, pauses}                      (deep stances)
+ *   deep_final_turn   {turn}                              (deep stances)
+ * plus the unchanged pipeline steps (rewriting, entities, classification, ...).
+ */
 export interface ProgressEvent {
   type: 'progress';
-  step: PipelineStep;
+  step: string;
   data: Record<string, unknown>;
-}
-
-// Web search progress events
-export interface WebSearchEvent {
-  type: 'progress';
-  step: 'web_search';
-  data: {
-    status: 'starting' | 'complete';
-  };
-}
-
-export interface WebSearchProgressEvent {
-  type: 'progress';
-  step: 'web_search_progress';
-  data: {
-    message: string;
-  };
-}
-
-// Web search streaming chunk event
-export interface WebSearchChunkEvent {
-  type: 'progress';
-  step: 'web_search_chunk';
-  data: {
-    chunk: string;
-  };
 }
 
 // Web search completion event with answer
@@ -84,50 +73,43 @@ export interface WebSearchCompleteEvent {
   question: string;
 }
 
-// New event types for streaming LLM response
-export interface AnswerChunkEvent {
-  type: 'progress';
-  step: 'answer_chunk';
-  data: {
-    chunk: string;
-  };
-}
-
-export interface AnswerCompleteEvent {
-  type: 'progress';
-  step: 'answer_complete';
-  data: {
-    answer: string;
-  };
-}
-
-export interface CitationVerifiedEvent {
-  type: 'progress';
-  step: 'citation_verified';
-  data: {
-    citation_id: number;
-    claim: string;
-    confidence: number;
-    is_valid: boolean;
-    explanation: string;
-  };
-}
-
 export interface CompleteEvent {
   type: 'complete';
+  /** Authoritative: replaces whatever was streamed. For any status but 'ok' it is a notice. */
   answer: string;
+  answer_status: AnswerStatus;
   sources: QueryResponse['sources'];
+  citations: Citation[];
+  claims: Claim[];
   question: string;
   query_type: string;
   expanded_query: string;
   retrieval_count: number;
   reranked_count: number;
   warnings: string[];
-  citation_checks: QueryResponse['citation_checks'];
   mode: AnswerMode;
   response_mode: 'concise' | 'detailed';
   used_general_knowledge: boolean;
   used_web_search: boolean;
+  served_model: string | null;
+  fallback_used: boolean;
+  stop_reason: string | null;
+  retrieval_mode: RetrievalMode;
+  long_context: LongContextInfo;
+  hybrid_fallback: boolean;
+  history: HistoryInfo;
+  profile_used: boolean;
+  /** True = an `entailment` event follows. */
+  entailment_pending: boolean;
+  /** Stored assistant message id; null if not persisted. */
+  message_id: number | null;
+  deep: DeepInfo | null;
+}
+
+/** Sent once after `complete` (and after `web_search`), only when `entailment_pending` was true. */
+export interface EntailmentEvent extends EntailmentReport {
+  type: 'entailment';
+  message_id: number | null;
 }
 
 export interface ErrorEvent {
@@ -135,7 +117,12 @@ export interface ErrorEvent {
   message: string;
 }
 
-export type StreamEvent = ProgressEvent | AnswerChunkEvent | AnswerCompleteEvent | CitationVerifiedEvent | WebSearchEvent | WebSearchProgressEvent | WebSearchChunkEvent | WebSearchCompleteEvent | CompleteEvent | ErrorEvent;
+export type StreamEvent =
+  | ProgressEvent
+  | WebSearchCompleteEvent
+  | CompleteEvent
+  | EntailmentEvent
+  | ErrorEvent;
 
 class ApiError extends Error {
   status: number;
@@ -168,80 +155,31 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
-// Query the research papers
-export async function queryPapers(
-  question: string,
-  options?: {
-    topK?: number;
-    effort?: string;
-    paperIds?: string[];
-    maxChunksPerPaper?: number | 'auto';
-    conversationId?: string;
-    queryType?: string;
-    enableHyde?: boolean;
-    enableExpansion?: boolean;
-    enableCitationCheck?: boolean;
-    mode?: AnswerMode;
-    responseMode?: 'concise' | 'detailed';
-    enableGeneralKnowledge?: boolean;
-    enableWebSearch?: boolean;
-  }
-): Promise<QueryResponse & { latency?: number }> {
-  const startTime = performance.now();
-
-  const response = await fetch(`${API_BASE}/query`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders(),
-    },
-    body: JSON.stringify({
-      question,
-      top_k: options?.topK ?? 10,
-      effort: options?.effort ?? 'high',
-      paper_ids: options?.paperIds?.length ? options.paperIds : null,
-      max_chunks_per_paper: options?.maxChunksPerPaper === 'auto' ? null : options?.maxChunksPerPaper,
-      conversation_id: options?.conversationId ?? null,
-      query_type: options?.queryType === 'auto' ? null : options?.queryType ?? null,
-      enable_hyde: options?.enableHyde ?? null,
-      enable_expansion: options?.enableExpansion ?? null,
-      enable_citation_check: options?.enableCitationCheck ?? null,
-      mode: options?.mode ?? 'ask',
-      response_mode: options?.responseMode ?? 'detailed',
-      enable_general_knowledge: options?.enableGeneralKnowledge ?? true,
-      enable_web_search: options?.enableWebSearch ?? false,
-    }),
-  });
-
-  const data = await handleResponse<QueryResponse>(response);
-
-  // Add latency to the response
-  const latency = performance.now() - startTime;
-  return { ...data, latency };
+export interface QueryRequestOptions {
+  topK?: number;
+  effort?: string;
+  paperIds?: string[];
+  maxChunksPerPaper?: number | 'auto';
+  conversationId?: string;
+  queryType?: string;
+  enableHyde?: boolean;
+  enableExpansion?: boolean;
+  /** Now means "run entailment" (null = server default). */
+  enableCitationCheck?: boolean;
+  mode?: AnswerMode;
+  responseMode?: 'concise' | 'detailed';
+  enableGeneralKnowledge?: boolean;
+  enableWebSearch?: boolean;
+  enablePdfUpload?: boolean;
+  /** false = this turn does not see the profile. */
+  useProfile?: boolean;
+  /** Deep stances: the project whose notebook the model may use. The conversation joins it. */
+  projectId?: string | null;
 }
 
-// Stream query with real-time progress updates
-export async function queryPapersStream(
-  question: string,
-  onProgress: (event: StreamEvent) => void,
-  options?: {
-    topK?: number;
-    effort?: string;
-    paperIds?: string[];
-    maxChunksPerPaper?: number | 'auto';
-    conversationId?: string;
-    queryType?: string;
-    enableHyde?: boolean;
-    enableExpansion?: boolean;
-    enableCitationCheck?: boolean;
-    mode?: AnswerMode;
-    responseMode?: 'concise' | 'detailed';
-    enableGeneralKnowledge?: boolean;
-    enableWebSearch?: boolean;
-    enablePdfUpload?: boolean;
-  }
-): Promise<void> {
-  const requestBody = {
+// `/query` and `/query/stream` take the same body.
+function buildQueryBody(question: string, options?: QueryRequestOptions) {
+  return {
     question,
     top_k: options?.topK ?? 10,
     effort: options?.effort ?? 'high',
@@ -257,7 +195,42 @@ export async function queryPapersStream(
     enable_general_knowledge: options?.enableGeneralKnowledge ?? true,
     enable_web_search: options?.enableWebSearch ?? false,
     enable_pdf_upload: options?.enablePdfUpload ?? false,
+    use_profile: options?.useProfile ?? true,
+    project_id: options?.projectId ?? null,
   };
+}
+
+// Query the research papers (non-streaming). Computes entailment before it
+// returns, which adds a few seconds: prefer queryPapersStream.
+export async function queryPapers(
+  question: string,
+  options?: QueryRequestOptions
+): Promise<QueryResponse & { latency?: number }> {
+  const startTime = performance.now();
+
+  const response = await fetch(`${API_BASE}/query`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(buildQueryBody(question, options)),
+  });
+
+  const data = await handleResponse<QueryResponse>(response);
+
+  // Add latency to the response
+  const latency = performance.now() - startTime;
+  return { ...data, latency };
+}
+
+// Stream query with real-time progress updates
+export async function queryPapersStream(
+  question: string,
+  onProgress: (event: StreamEvent) => void,
+  options?: QueryRequestOptions
+): Promise<void> {
+  const requestBody = buildQueryBody(question, options);
 
   // Log the request body for debugging
   console.log('[API] queryPapersStream request body:', {
@@ -265,6 +238,8 @@ export async function queryPapersStream(
     response_mode: requestBody.response_mode,
     enable_general_knowledge: requestBody.enable_general_knowledge,
     enable_web_search: requestBody.enable_web_search,
+    use_profile: requestBody.use_profile,
+    project_id: requestBody.project_id,
   });
 
   const response = await fetch(`${API_BASE}/query/stream`, {
@@ -299,30 +274,46 @@ export async function queryPapersStream(
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
+  // Parse a line, then hand the event to the caller *outside* the parse
+  // try/catch: an exception thrown by the handler (the context throws on an
+  // `error` event) must reach the caller, not be logged as a parse failure.
+  const handleLine = (line: string) => {
+    if (!line.startsWith('data: ')) return;
+    const jsonStr = line.slice(6).trim();
+    if (!jsonStr) return;
+    let event: StreamEvent;
+    try {
+      event = JSON.parse(jsonStr) as StreamEvent;
+    } catch (e) {
+      console.error('Failed to parse SSE event:', e, jsonStr);
+      return;
+    }
+    onProgress(event);
+  };
 
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
 
-    buffer += decoder.decode(value, { stream: true });
+      if (done) break;
 
-    // Process complete SSE messages
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+      buffer += decoder.decode(value, { stream: true });
 
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const jsonStr = line.slice(6).trim();
-        if (jsonStr) {
-          try {
-            const event = JSON.parse(jsonStr) as StreamEvent;
-            onProgress(event);
-          } catch (e) {
-            console.error('Failed to parse SSE event:', e, jsonStr);
-          }
-        }
+      // Process complete SSE messages
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        handleLine(line);
       }
     }
+
+    // A final event not terminated by a newline would otherwise be dropped.
+    buffer += decoder.decode();
+    if (buffer) handleLine(buffer);
+  } finally {
+    // If the handler threw (an `error` event), stop the server streaming to nobody.
+    reader.cancel().catch(() => {});
   }
 }
 
@@ -344,7 +335,8 @@ export async function getStats(): Promise<StatsResponse> {
   return handleResponse<StatsResponse>(response);
 }
 
-// Clear conversation
+// Clear conversation. Since W3 this is a server-side no-op (the model's view of a
+// thread is rebuilt from its stored messages); kept for compatibility.
 export async function clearConversation(
   conversationId?: string
 ): Promise<{ status: string; message: string }> {
@@ -466,12 +458,20 @@ export async function getPaper(paperId: string): Promise<Paper> {
 }
 
 // Get PDF URL for a paper.
-// `page` becomes a PDF Open Parameter fragment, which the browser's built-in
-// viewer honours -- the cheap half of click-to-highlight, ahead of W3's pdf.js
-// work. A fragment is never sent to the server, so it cannot break the route.
+// The in-app viewer (pdf.js) takes the page as a prop, not from this URL. `page`
+// becomes a PDF Open Parameter fragment, which only matters for "open in a new
+// tab" (the browser's built-in viewer honours it). A fragment is never sent to
+// the server, so it cannot break the route.
 export function getPdfUrl(paperId: string, page?: number | null): string {
   const url = `${API_BASE}/papers/${paperId}/pdf`;
   return page && page > 0 ? `${url}#page=${page}` : url;
+}
+
+// The same PDF with `?download=true`, which makes the server answer with
+// `Content-Disposition: attachment`. Needed because the `download` attribute of
+// an <a> is ignored for cross-origin URLs (VITE_API_BASE_URL may be absolute).
+export function getPdfDownloadUrl(paperId: string): string {
+  return `${API_BASE}/papers/${paperId}/pdf?download=true`;
 }
 
 // Image bytes for one figure or table crop.
@@ -1085,12 +1085,7 @@ export async function addMessage(
 // Memory API
 // =============================================================================
 
-export interface Memory {
-  id: number;
-  fact: string;
-  category?: string;
-  created_at: string;
-}
+export type Memory = MemoryFact;
 
 export async function getMemories(category?: string): Promise<{ memories: Memory[]; total: number }> {
   const params = category ? `?category=${encodeURIComponent(category)}` : '';
@@ -1107,7 +1102,30 @@ export async function addMemory(fact: string, category?: string): Promise<Memory
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
     },
-    body: JSON.stringify({ fact, category }),
+    body: JSON.stringify({ fact, category: category || null }),
+  });
+  return handleResponse(response);
+}
+
+/**
+ * Edit a fact in place. Omitted fields are unchanged; `clearCategory` removes
+ * the category (an empty `category` string would also be treated as "none").
+ */
+export async function updateMemory(
+  id: number,
+  updates: { fact?: string; category?: string; clearCategory?: boolean }
+): Promise<Memory> {
+  const response = await fetch(`${API_BASE}/memory/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({
+      fact: updates.fact,
+      category: updates.category,
+      clear_category: updates.clearCategory ?? false,
+    }),
   });
   return handleResponse(response);
 }
@@ -1120,11 +1138,136 @@ export async function deleteMemory(id: number): Promise<void> {
   await handleResponse(response);
 }
 
+// Kept for compatibility; the profile page uses getProfile(), which returns the same text.
 export async function getMemoryContext(): Promise<{ context: string }> {
   const response = await fetch(`${API_BASE}/memory/context`, {
     headers: getAuthHeaders(),
   });
   return handleResponse(response);
+}
+
+/** The profile as the user edits it and exactly as the model receives it. */
+export async function getProfile(): Promise<ProfileResponse> {
+  const response = await fetch(`${API_BASE}/memory/profile`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+/** Replace the profile paragraph ("" removes it). Facts are untouched. */
+export async function setProfileParagraph(paragraph: string): Promise<ProfileResponse> {
+  const response = await fetch(`${API_BASE}/memory/profile`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({ paragraph }),
+  });
+  return handleResponse(response);
+}
+
+// =============================================================================
+// Projects and notebooks
+// =============================================================================
+
+export interface ProjectInput {
+  name: string;
+  description?: string;
+  paper_ids?: string[];
+  open_questions?: string[];
+}
+
+export async function getProjects(): Promise<{ projects: Project[]; total: number }> {
+  const response = await fetch(`${API_BASE}/projects`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function createProject(input: ProjectInput): Promise<Project> {
+  const response = await fetch(`${API_BASE}/projects`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(input),
+  });
+  return handleResponse(response);
+}
+
+/** Omitted fields are unchanged; "" or [] clears one. */
+export async function updateProject(id: string, updates: Partial<ProjectInput>): Promise<Project> {
+  const response = await fetch(`${API_BASE}/projects/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(updates),
+  });
+  return handleResponse(response);
+}
+
+/** Deletes the project and its notebook; its conversations are kept (unlinked). */
+export async function deleteProject(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/projects/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  await handleResponse(response);
+}
+
+/** Link a conversation to a project (moving it out of any other). */
+export async function linkConversationToProject(
+  projectId: string,
+  conversationId: string
+): Promise<Project> {
+  const response = await fetch(
+    `${API_BASE}/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}`,
+    { method: 'PUT', headers: getAuthHeaders() }
+  );
+  return handleResponse(response);
+}
+
+export async function unlinkConversationFromProject(
+  projectId: string,
+  conversationId: string
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}`,
+    { method: 'DELETE', headers: getAuthHeaders() }
+  );
+  await handleResponse(response);
+}
+
+export async function getNotebook(projectId: string): Promise<NotebookListing> {
+  const response = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/notebook`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function readNotebookFile(
+  projectId: string,
+  path: string
+): Promise<{ path: string; content: string }> {
+  const params = new URLSearchParams({ path });
+  const response = await fetch(
+    `${API_BASE}/projects/${encodeURIComponent(projectId)}/notebook/file?${params}`,
+    { headers: getAuthHeaders() }
+  );
+  return handleResponse(response);
+}
+
+export async function deleteNotebookFile(projectId: string, path: string): Promise<void> {
+  const params = new URLSearchParams({ path });
+  const response = await fetch(
+    `${API_BASE}/projects/${encodeURIComponent(projectId)}/notebook/file?${params}`,
+    { method: 'DELETE', headers: getAuthHeaders() }
+  );
+  await handleResponse(response);
 }
 
 // =============================================================================
@@ -1230,6 +1373,7 @@ export const api = {
   getPapers,
   getPaper,
   getPdfUrl,
+  getPdfDownloadUrl,
   getFigureImageUrl,
   getPaperFigures,
   deletePaper,
@@ -1260,8 +1404,21 @@ export const api = {
   // Memory
   getMemories,
   addMemory,
+  updateMemory,
   deleteMemory,
   getMemoryContext,
+  getProfile,
+  setProfileParagraph,
+  // Projects and notebooks
+  getProjects,
+  createProject,
+  updateProject,
+  deleteProject,
+  linkConversationToProject,
+  unlinkConversationFromProject,
+  getNotebook,
+  readNotebookFile,
+  deleteNotebookFile,
   // User Preferences
   getUserPreferences,
   updateUserPreferences,

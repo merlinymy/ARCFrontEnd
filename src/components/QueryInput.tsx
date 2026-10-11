@@ -10,6 +10,7 @@ import {
   Trash2,
   Globe,
   Search,
+  UserRound,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { InfoTooltip } from './Tooltip';
@@ -46,8 +47,10 @@ const EFFORT_OPTIONS: { value: EffortLevel; label: string }[] = [
 ];
 
 export function QueryInput() {
-  const { state, dispatch, submitQuery, clearConversation } = useApp();
-  const { currentQuery, queryOptions, isLoading } = state;
+  const { state, dispatch, submitQuery, clearConversation, setActivePage } = useApp();
+  const { currentQuery, queryOptions, isLoading, activeConversationId } = state;
+  const isDeepMode =
+    queryOptions.mode === 'develop' || queryOptions.mode === 'critique' || queryOptions.mode === 'draft';
   const [showAdvanced, setShowAdvanced] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -112,25 +115,59 @@ export function QueryInput() {
 
         {/* Advanced options toggle */}
         <div className="flex items-center justify-between mt-3">
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-          >
-            {showAdvanced ? (
-              <ChevronUp className="w-4 h-4" />
-            ) : (
-              <ChevronDown className="w-4 h-4" />
-            )}
-            Advanced Options
-          </button>
+          <div className="flex items-center gap-4 flex-wrap">
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              aria-expanded={showAdvanced}
+              className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            >
+              {showAdvanced ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+              Advanced Options
+            </button>
 
-          <button
-            onClick={clearConversation}
-            className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-            Clear Conversation
-          </button>
+            {/* Per message: whether this question sees the profile. */}
+            <span className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={queryOptions.useProfile}
+                onClick={() =>
+                  dispatch({ type: 'SET_QUERY_OPTIONS', payload: { useProfile: !queryOptions.useProfile } })
+                }
+                className={`flex items-center gap-1.5 text-sm rounded-md px-1.5 py-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  queryOptions.useProfile
+                    ? 'text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                <UserRound className="w-4 h-4" aria-hidden="true" />
+                Profile: {queryOptions.useProfile ? 'on' : 'off'}
+              </button>
+              <InfoTooltip content="Whether this question is sent together with your profile (your background and preferences). Switch it off for a question that should not be shaped by them. The View link shows exactly what is sent." />
+              <button
+                type="button"
+                onClick={() => setActivePage('profile')}
+                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline decoration-dotted underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+              >
+                view
+              </button>
+            </span>
+          </div>
+
+          {activeConversationId && (
+            <button
+              onClick={clearConversation}
+              className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+              title="Deletes this conversation. The model sees a thread only through its stored messages, so clearing it means deleting it."
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete conversation
+            </button>
+          )}
         </div>
 
         {/* Advanced options panel */}
@@ -164,6 +201,12 @@ export function QueryInput() {
               <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                 {ANSWER_MODE_DESCRIPTIONS[queryOptions.mode]}
               </p>
+              {isDeepMode && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  This mode searches your library itself, over several steps, and can use a project
+                  notebook. It takes longer than Ask: often a minute or more.
+                </p>
+              )}
             </div>
 
             {/* Query Type - SECOND */}
@@ -349,7 +392,7 @@ export function QueryInput() {
                     <Shield className="w-4 h-4 text-green-500" />
                     <span className="text-sm text-gray-700 dark:text-gray-300">Citation Check</span>
                   </label>
-                  <InfoTooltip content="Verifies that claims in the generated answer are supported by the source documents. Reduces hallucinations and improves trustworthiness." />
+                  <InfoTooltip content="After the answer is shown, compares each cited claim with the quote it cites and labels it Supported, Partially supported or Unsupported. It runs in the background and never delays the answer." />
                 </div>
 
                 <div className="flex items-center gap-2">

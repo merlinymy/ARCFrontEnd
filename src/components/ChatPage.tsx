@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { FileText, X } from 'lucide-react';
 import { ConversationThread } from './ConversationThread';
 import { QueryInput } from './QueryInput';
+import { ProjectBar } from './ProjectBar';
 import { useApp } from '../context/AppContext';
 
 export function ChatPage() {
@@ -26,6 +27,7 @@ export function ChatPage() {
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 min-h-0">
+      <ProjectBar />
       {/* Top border - shows when content scrolled under header */}
       <div className={`h-px shrink-0 transition-colors ${hasScrolledContent.top ? 'bg-gray-200 dark:bg-gray-700' : 'bg-transparent'}`} />
 

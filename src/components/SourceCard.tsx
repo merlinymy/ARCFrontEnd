@@ -7,14 +7,35 @@ import {
   ExternalLink,
   Check,
   Image as ImageIcon,
+  BookOpen,
 } from 'lucide-react';
-import type { FigureRef, Source, ChunkType } from '../types';
+import type { Citation, Claim, FigureRef, Source, ChunkType } from '../types';
 import { useApp } from '../context/AppContext';
 import { FigureView, FigureLightbox } from './FigureView';
+import { EntailmentBadge, EntailmentPending } from './EntailmentBadge';
+import {
+  citationPage,
+  formatBookLine,
+  formatLocation,
+  locationNote,
+  pdfHighlightFromCitation,
+  type EntailmentIndex,
+} from '../lib/citations';
 
 interface SourceCardProps {
   source: Source;
-  index: number;
+  /**
+   * Label shown in the number column. For a W3 answer the citation ids that
+   * point at this source; for a pre-W3 answer the `[Source N]` number.
+   */
+  badges?: Array<number | string>;
+  /** Citations that came from this source: their quotes are shown under the header. */
+  citations?: Citation[];
+  claims?: Claim[];
+  entailment?: EntailmentIndex;
+  entailmentPending?: boolean;
+  /** Relevance bar. Meaningless for whole-paper sources (long-context). */
+  showScore?: boolean;
 }
 
 const CHUNK_TYPE_COLORS: Record<ChunkType, string> = {
@@ -24,6 +45,7 @@ const CHUNK_TYPE_COLORS: Record<ChunkType, string> = {
   table: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
   caption: 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400',
   full: 'bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-400',
+  document: 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400',
 };
 
 const CHUNK_TYPE_LABELS: Record<ChunkType, string> = {
@@ -33,6 +55,7 @@ const CHUNK_TYPE_LABELS: Record<ChunkType, string> = {
   table: 'Table',
   caption: 'Caption',
   full: 'Full document',
+  document: 'Read in full',
 };
 
 /**
@@ -87,7 +110,92 @@ function TextWithFigureRefs({
   return <>{parts}</>;
 }
 
-export function SourceCard({ source, index }: SourceCardProps) {
+/**
+ * One quote a source was cited for. It shows the location line, the verbatim
+ * passage and (once the check has run) whether the passage supports the claim
+ * it was cited for, with the reason printed beside the label.
+ */
+function CitedPassage({
+  citation,
+  claims,
+  entailment,
+  entailmentPending,
+}: {
+  citation: Citation;
+  claims: Claim[];
+  entailment?: EntailmentIndex;
+  entailmentPending: boolean;
+}) {
+  const { setViewingPdf } = useApp();
+  const location = formatLocation(citation);
+  const note = locationNote(citation);
+  const labels = entailment?.byCitation.get(citation.id) ?? [];
+  const page = citationPage(citation);
+
+  return (
+    <li className="rounded-lg border border-blue-100 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-900/10 p-3">
+      <div className="flex items-center gap-2 flex-wrap text-xs text-gray-600 dark:text-gray-400">
+        <span className="inline-flex items-center justify-center min-w-[1.25rem] px-1.5 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold tabular-nums">
+          {citation.id}
+        </span>
+        {location && <span>{location}</span>}
+      </div>
+      <blockquote className="mt-2 border-l-2 border-blue-400 dark:border-blue-500 pl-3 text-sm text-gray-800 dark:text-gray-100 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+        {citation.cited_text}
+      </blockquote>
+      {note && (
+        <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400 italic">{note}</p>
+      )}
+
+      {labels.length > 0 ? (
+        <ul className="mt-2 space-y-1.5">
+          {labels.map((label) => {
+            const claim = claims[label.claim_index];
+            return (
+              <li key={`${label.claim_index}:${label.citation_id}`} className="text-xs">
+                <EntailmentBadge label={label} showReason />
+                {claim?.text && labels.length > 1 && (
+                  <div className="mt-0.5 text-gray-500 dark:text-gray-400">
+                    For: &ldquo;{claim.text}&rdquo;
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        entailmentPending && (
+          <div className="mt-2">
+            <EntailmentPending text={'Checking this citation…'} />
+          </div>
+        )
+      )}
+
+      {citation.paper_id && (
+        <button
+          type="button"
+          onClick={() =>
+            setViewingPdf(citation.paper_id, page, pdfHighlightFromCitation(citation))
+          }
+          className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+          {page ? `Open at p. ${page}` : 'Open PDF'}
+        </button>
+      )}
+    </li>
+  );
+}
+
+export function SourceCard({
+  source,
+  badges,
+  citations = [],
+  claims = [],
+  entailment,
+  entailmentPending = false,
+  showScore = true,
+}: SourceCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [openRef, setOpenRef] = useState<FigureRef | null>(null);
@@ -103,9 +211,12 @@ export function SourceCard({ source, index }: SourceCardProps) {
   const jumpPage = source.figure_page ?? source.page_start ?? null;
 
   // Handle sources without relevance_score (e.g., web search sources)
-  const hasRelevanceScore = source.relevance_score !== undefined && source.relevance_score !== null;
+  const hasRelevanceScore =
+    showScore && source.relevance_score !== undefined && source.relevance_score !== null;
   const scorePercent = hasRelevanceScore ? Math.round(source.relevance_score * 100) : 0;
   const chunkType = (source.chunk_type as ChunkType) || 'section';
+  const bookLine = formatBookLine(source);
+  const hasText = source.chunk_text.length > 0;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(source.chunk_text);
@@ -121,11 +232,19 @@ export function SourceCard({ source, index }: SourceCardProps) {
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-start gap-3">
-          {/* Index and score */}
-          <div className="flex flex-col items-center shrink-0">
-            <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">
-              [{index + 1}]
-            </span>
+          {/* Citation ids (or "not cited") and score */}
+          <div className="flex flex-col items-center shrink-0 min-w-[2rem]">
+            {badges && badges.length > 0 ? (
+              <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                <span className="sr-only">Cited as </span>
+                {badges.map((b) => `[${b}]`).join(' ')}
+              </span>
+            ) : (
+              <span className="text-sm text-gray-300 dark:text-gray-600" title="Retrieved, not cited">
+                <span aria-hidden="true">&ndash;</span>
+                <span className="sr-only">Not cited</span>
+              </span>
+            )}
             {hasRelevanceScore && (
               <>
                 <div className="mt-1 w-12 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -150,6 +269,13 @@ export function SourceCard({ source, index }: SourceCardProps) {
               </span>
             </div>
 
+            {bookLine && (
+              <div className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                <BookOpen className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{bookLine}</span>
+              </div>
+            )}
+
             {source.section_name && (
               <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
                 § {source.section_name}
@@ -163,9 +289,9 @@ export function SourceCard({ source, index }: SourceCardProps) {
 
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <span
-                className={`text-xs px-2 py-0.5 rounded-full ${CHUNK_TYPE_COLORS[chunkType]}`}
+                className={`text-xs px-2 py-0.5 rounded-full ${CHUNK_TYPE_COLORS[chunkType] ?? CHUNK_TYPE_COLORS.section}`}
               >
-                {CHUNK_TYPE_LABELS[chunkType]}
+                {CHUNK_TYPE_LABELS[chunkType] ?? chunkType}
               </span>
               {source.page_start != null && (
                 <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -185,7 +311,12 @@ export function SourceCard({ source, index }: SourceCardProps) {
           </div>
 
           {/* Expand toggle */}
-          <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Hide the retrieved passage' : 'Show the retrieved passage'}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
             {expanded ? (
               <ChevronUp className="w-4 h-4 text-gray-400" />
             ) : (
@@ -194,6 +325,21 @@ export function SourceCard({ source, index }: SourceCardProps) {
           </button>
         </div>
       </div>
+
+      {/* The quotes this source was cited for: always visible, they are the point. */}
+      {citations.length > 0 && (
+        <ul className="border-t border-gray-200 dark:border-gray-700 p-3 space-y-2">
+          {citations.map((citation) => (
+            <CitedPassage
+              key={citation.id}
+              citation={citation}
+              claims={claims}
+              entailment={entailment}
+              entailmentPending={entailmentPending}
+            />
+          ))}
+        </ul>
+      )}
 
       {/* Expanded content */}
       {expanded && (
@@ -211,31 +357,39 @@ export function SourceCard({ source, index }: SourceCardProps) {
             />
           )}
 
-          <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto">
-            <p className="whitespace-pre-wrap">
-              <TextWithFigureRefs
-                text={source.chunk_text}
-                refs={figureRefs}
-                onOpen={setOpenRef}
-              />
+          {hasText ? (
+            <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto">
+              <p className="whitespace-pre-wrap">
+                <TextWithFigureRefs
+                  text={source.chunk_text}
+                  refs={figureRefs}
+                  onOpen={setOpenRef}
+                />
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              No retrieved text for this source: it was cited from the uploaded PDF.
             </p>
-          </div>
+          )}
 
           <div className="flex items-center gap-2 mt-3">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCopy();
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg transition-colors"
-            >
-              {copied ? (
-                <Check className="w-4 h-4 text-green-500" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
+            {hasText && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopy();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg transition-colors"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            )}
 
             <button
               onClick={(e) => {

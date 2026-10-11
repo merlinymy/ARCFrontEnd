@@ -1,10 +1,16 @@
+import { lazy, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Layout, ChatPage, LibraryPage, PdfViewer, LoginPage, HealthStatusPanel } from './components';
+import { Layout, ChatPage, LibraryPage, LoginPage, HealthStatusPanel } from './components';
 import { PromptsPage } from './components/PromptsPage';
+import { ProfilePage } from './components/ProfilePage';
+import { ProjectsPage } from './components/ProjectsPage';
 import { ToastContainer } from './components/Toast';
 import { BatchUploadPanel } from './components/BatchUploadPanel';
 import { Loader2 } from 'lucide-react';
+
+// pdf.js is large; it is fetched the first time a PDF is opened, not at startup.
+const PdfViewer = lazy(() => import('./components/PdfViewer').then((m) => ({ default: m.PdfViewer })));
 
 function AppContent() {
   const { state, removeToast } = useApp();
@@ -17,9 +23,16 @@ function AppContent() {
         {activePage === 'library' && <LibraryPage />}
         {activePage === 'prompts' && <PromptsPage />}
         {activePage === 'health' && <HealthStatusPanel />}
+        {activePage === 'profile' && <ProfilePage />}
+        {activePage === 'projects' && <ProjectsPage />}
 
-        {/* Global PDF Viewer - works from any page */}
-        {viewingPdfId && <PdfViewer paperId={viewingPdfId} />}
+        {/* Global PDF Viewer - works from any page. Keyed by paper so that
+            nothing about one paper's page carries over to another's. */}
+        {viewingPdfId && (
+          <Suspense fallback={null}>
+            <PdfViewer key={viewingPdfId} paperId={viewingPdfId} />
+          </Suspense>
+        )}
       </Layout>
 
       {/* Global Upload Panel */}

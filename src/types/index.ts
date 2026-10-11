@@ -10,7 +10,7 @@ export type QueryType =
   | 'general';
 
 // Chunk types from the document
-export type ChunkType = 'abstract' | 'section' | 'fine' | 'table' | 'caption' | 'full';
+export type ChunkType = 'abstract' | 'section' | 'fine' | 'table' | 'caption' | 'full' | 'document';
 
 // Entity types
 export interface Entity {
@@ -55,6 +55,166 @@ export interface Source {
   has_figure_image?: boolean;
   // Figures this source *mentions*
   figure_refs?: FigureRef[];
+  // W3: the indexed chunk this source is
+  chunk_id?: string | null;
+  // W3: book chunks only (all null for papers)
+  doc_kind?: string | null;
+  book_title?: string | null;
+  chapter_index?: number | null;
+  chapter_label?: string | null;
+  chapter_title?: string | null;
+  chapter_authors?: string[] | null;
+  chapter_doi?: string | null;
+  printed_page_start?: number | null;
+  printed_page_end?: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// W3 answer pipeline: citations, claims, entailment
+// ---------------------------------------------------------------------------
+
+/**
+ * How a citation's page and box were obtained.
+ *   record         exact, through the paper record
+ *   record_search  the cited text was found in the record by string search
+ *   chunk          only the chunk's own page and box (imprecise)
+ *   pdf_page       native PDF citation; page only
+ *   none           no location
+ */
+export type LocationSource = 'record' | 'record_search' | 'chunk' | 'pdf_page' | 'none';
+
+/** A rectangle on one page. bbox is [x0, y0, x1, y1] in per-mille of the page, top-left origin. */
+export interface PageHighlight {
+  /** 1-indexed PDF page */
+  page: number;
+  bbox: number[];
+}
+
+/**
+ * One distinct cited passage. The answer text refers to it with a marker
+ * `⟦id⟧`. `cited_text` is verbatim, extracted by the API from the document.
+ */
+export interface Citation {
+  id: number;
+  /** Index into the same response's `sources`; null for a whole-PDF citation. */
+  source_index: number | null;
+  paper_id: string | null;
+  paper_title: string | null;
+  chunk_id: string | null;
+  cited_text: string;
+  doc_char_start: number | null;
+  doc_char_end: number | null;
+  /** 1-indexed PDF pages of the first and last block of the span; may be null. */
+  page: number | null;
+  page_end: number | null;
+  bbox: number[] | null;
+  highlights: PageHighlight[];
+  location_source: LocationSource;
+  section_name: string | null;
+  /** Ready-made label from the server ("p. 4, Results", "Ch. 4, p. 103"). */
+  locator: string | null;
+  // Book fields; null for papers.
+  doc_kind: string | null;
+  book_title: string | null;
+  chapter_index: number | null;
+  chapter_label: string | null;
+  chapter_title: string | null;
+  chapter_authors: string[] | null;
+  chapter_doi: string | null;
+  printed_page: number | null;
+  printed_page_start: number | null;
+  printed_page_end: number | null;
+}
+
+/** One cited stretch of the answer, in order; entailment labels attach to it. */
+export interface Claim {
+  index: number;
+  text: string;
+  citation_ids: number[];
+}
+
+export type EntailmentLabelValue = 'supported' | 'partially_supported' | 'unsupported';
+
+/** One (claim, citation) pair as judged by the entailment pass. */
+export interface EntailmentLabel {
+  claim_index: number;
+  citation_id: number;
+  label: EntailmentLabelValue;
+  reason: string;
+}
+
+export interface EntailmentReport {
+  /** ok | partial (some pairs not judged) | error (no labels) | skipped */
+  status: 'ok' | 'partial' | 'error' | 'skipped';
+  model: string | null;
+  labels: EntailmentLabel[];
+  summary: Partial<Record<EntailmentLabelValue | 'unchecked', number>>;
+  error: string | null;
+  latency_ms: number;
+}
+
+export type AnswerStatus = 'ok' | 'refused' | 'error' | 'incomplete';
+export type RetrievalMode = 'retrieval' | 'long_context' | 'agentic';
+
+/** What was replayed from the stored thread. `{}` when unauthenticated. */
+export interface HistoryInfo {
+  messages?: number;
+  total_turns?: number;
+  included_turns?: number;
+  trimmed_turns?: number;
+  skipped_turns?: number;
+  est_tokens?: number;
+}
+
+/** `{}` unless `paper_ids` was sent. */
+export interface LongContextInfo {
+  used?: boolean;
+  reason?: string;
+  papers?: Array<{ paper_id: string; title: string; est_tokens: number }>;
+  est_tokens?: number;
+}
+
+export interface DeepToolCall {
+  name: string;
+  input: Record<string, unknown>;
+  passages: number;
+}
+
+/** Deep stances (develop / critique / draft) only. */
+export interface DeepInfo {
+  turns: number;
+  tool_calls: DeepToolCall[];
+  pauses: number;
+  notebook: boolean;
+  incomplete: boolean;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
+}
+
+/** Live progress of a deep run, built from `tool_call`, `sources_added`, `pause_turn`, `deep_final_turn`. */
+export interface DeepRunProgress {
+  toolCalls: DeepToolCall[];
+  passagesFound: number;
+  pauses: number;
+  /** Set when the last permitted turn runs with tools disabled. */
+  finalTurn: boolean;
+  /** Narration dropped because the model went on to call a tool. */
+  narrationResets: number;
+}
+
+/** Live progress of the current run, reset on each submit. */
+export interface RunProgress {
+  /** Set when the `long_context` progress event arrived. */
+  longContext: { used: boolean; reason?: string; papers: number } | null;
+  /** True once a deep-stance event has been seen (or the mode is deep). */
+  deep: DeepRunProgress | null;
+  /** History trimmed from the model's context this turn. */
+  trimmedTurns: number;
+  startedAt: number;
 }
 
 // One figure or table of a paper, from GET /papers/{id}/figures
@@ -88,7 +248,8 @@ export interface PaperFigureList {
   schema_version: number | null;
 }
 
-// Citation verification check result
+// Pre-W3 citation check, kept only so old stored messages still type-check.
+// New answers use `EntailmentReport`; nothing renders this any more.
 export interface CitationCheck {
   citation_id: number;
   claim: string;
@@ -107,11 +268,26 @@ export interface QueryResponse {
   retrieval_count: number;
   reranked_count: number;
   warnings: string[];
-  citation_checks: CitationCheck[];
   mode: AnswerMode;
   response_mode: ResponseMode;
   used_general_knowledge: boolean;
   used_web_search: boolean;
+  // W3
+  answer_status: AnswerStatus;
+  citations: Citation[];
+  claims: Claim[];
+  served_model: string | null;
+  fallback_used: boolean;
+  stop_reason: string | null;
+  retrieval_mode: RetrievalMode;
+  long_context: LongContextInfo;
+  hybrid_fallback: boolean;
+  history: HistoryInfo;
+  profile_used: boolean;
+  message_id: number | null;
+  deep: DeepInfo | null;
+  /** /query computes entailment before returning; null when the check is off. */
+  entailment: EntailmentReport | null;
 }
 
 // Message in a conversation
@@ -121,16 +297,40 @@ export interface Message {
   content: string;
   timestamp: Date;
   metadata?: {
+    /** Stored assistant message id on the server; null/undefined if not persisted. */
+    messageId?: number | null;
     queryType?: QueryType;
     expandedQuery?: string;
     entities?: Entity[];
     sources?: Source[];
-    citationScore?: number;
     retrievalCount?: number;
     rerankedCount?: number;
     latency?: number;
     warnings?: string[];
+    /** Pre-W3 only. Ignored by the renderer. */
     citationChecks?: CitationCheck[];
+    // W3. `citations` being an array (even empty) is what marks a message as
+    // W3; its absence marks a stored pre-W3 message whose text carries
+    // `[Source N]`.
+    citations?: Citation[];
+    claims?: Claim[];
+    answerStatus?: AnswerStatus;
+    servedModel?: string | null;
+    /** Model that declined before a fallback took over, when the stream said so. */
+    fallbackFrom?: string | null;
+    fallbackUsed?: boolean;
+    stopReason?: string | null;
+    retrievalMode?: RetrievalMode;
+    longContext?: LongContextInfo;
+    hybridFallback?: boolean;
+    history?: HistoryInfo;
+    profileUsed?: boolean;
+    deep?: DeepInfo | null;
+    mode?: AnswerMode;
+    /** Entailment labels; null/undefined until the pass finishes. */
+    entailment?: EntailmentReport | null;
+    /** True from `complete` until the `entailment` event arrives. */
+    entailmentPending?: boolean;
     // Web search specific
     isWebSearch?: boolean;
     webSearchSources?: Array<{ url: string; title: string }>;
@@ -335,6 +535,8 @@ export interface QueryOptions {
   enableGeneralKnowledge: boolean; // Allow LLM general knowledge beyond RAG sources
   enableWebSearch: boolean; // Allow Claude to search the web
   enablePdfUpload: boolean; // Send actual PDF files to Claude (32MB limit, 100 pages max)
+  // Whether this turn sees the user's profile. Per message; not a stored preference.
+  useProfile: boolean;
 }
 
 // Health status for services
@@ -417,11 +619,20 @@ export interface StatsResponse {
   total_vectors: number;
   vector_dimension: number;
   embedding_model: string;
+  /** The model *requested* for answers. */
   llm_model: string;
+  llm_model_fallback?: string | null;
+  /** The model that served the most recent answer in this server process. */
+  served_model?: string | null;
+  /** Stored assistant answers per serving model (durable). */
+  served_models?: Record<string, number>;
+  served_models_this_process?: Record<string, number>;
   cache_stats: CacheStats;
   conversation_stats: {
-    turns: number;
-    papers_discussed: string[];
+    enabled?: boolean;
+    source?: string;
+    turns?: number;
+    papers_discussed?: string[];
   };
   analytics?: AnalyticsStats;
 }
@@ -450,20 +661,18 @@ export type PipelineStepName =
   | 'thinking_chunk'
   | 'answer_chunk'
   | 'answer_complete'
-  | 'citation_verified'
   | 'verification'
+  | 'memory'
+  | 'long_context'
+  | 'citation'
+  | 'answer_reset'
+  | 'tool_call'
+  | 'sources_added'
+  | 'pause_turn'
+  | 'deep_final_turn'
   | 'web_search'
   | 'web_search_progress'
   | 'web_search_chunk';
-
-// Streaming citation verification result
-export interface StreamingCitationCheck {
-  citation_id: number;
-  claim: string;
-  confidence: number;
-  is_valid: boolean;
-  explanation: string;
-}
 
 // Step info for display
 export interface PipelineStepInfo {
@@ -485,7 +694,6 @@ export const PIPELINE_STEPS: Array<{ name: PipelineStepName; label: string; desc
   { name: 'retrieval', label: 'Retrieval', description: 'Searching documents' },
   { name: 'reranking', label: 'Reranking', description: 'Ranking by relevance' },
   { name: 'generation', label: 'Generation', description: 'Creating answer' },
-  { name: 'verification', label: 'Verification', description: 'Checking citations' },
   { name: 'web_search', label: 'Web Search', description: 'Searching the web for additional context' },
 ];
 
@@ -494,7 +702,9 @@ export interface StreamingState {
   messageId: string;
   conversationId: string;
   content: string;
-  citationChecks: CitationCheck[];
+  /** Citations received so far, in arrival order. A marker in `content` is only ever
+   *  rendered after its citation has arrived (the server sends the citation first). */
+  citations: Citation[];
   isStreaming: boolean;
 }
 
@@ -506,6 +716,73 @@ export interface ToastMessage {
   type: ToastType;
   message: string;
   duration?: number;
+}
+
+export type AppPage = 'chat' | 'library' | 'prompts' | 'health' | 'profile' | 'projects';
+
+/** What the PDF viewer should draw over the page it opens at. */
+export interface PdfHighlight {
+  highlights: PageHighlight[];
+  /** The verbatim cited passage, shown beside the page. */
+  quote: string | null;
+  locationSource: LocationSource | null;
+  /** Last page of the span, when it runs over a page break. */
+  pageEnd: number | null;
+  /** "p. 7 · Methods" */
+  locator: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Profile (memory)
+// ---------------------------------------------------------------------------
+
+export interface MemoryFact {
+  id: number;
+  fact: string;
+  category?: string | null;
+  created_at: string;
+}
+
+export interface ProfileResponse {
+  paragraph: string;
+  facts: MemoryFact[];
+  /** Exactly what the model receives each turn ('' when the profile is empty). */
+  injected_message: string;
+  injected_chars: number;
+  est_tokens: number;
+  /** The profile exceeds max_chars; later facts are left out of the message. */
+  truncated: boolean;
+  facts_included: number;
+  max_chars: number;
+  /** Server switch; false means nothing is injected whatever is stored. */
+  injection_enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Projects and notebooks
+// ---------------------------------------------------------------------------
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  paper_ids: string[];
+  open_questions: string[];
+  conversation_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotebookFileInfo {
+  path: string;
+  size: number;
+  modified: number;
+}
+
+export interface NotebookListing {
+  files: NotebookFileInfo[];
+  total_bytes: number;
+  max_bytes: number;
 }
 
 export interface AppState {
@@ -536,13 +813,20 @@ export interface AppState {
   sidebarOpen: boolean;
   theme: 'light' | 'dark';
   pipelineExpanded: boolean;
-  activePage: 'chat' | 'library' | 'prompts' | 'health';
+  activePage: AppPage;
   selectedPaperId: string | null;
   viewingPdfId: string | null;
   //: Page to open the PDF viewer at, 1-indexed. Null means page 1.
   viewingPdfPage: number | null;
+  // What to highlight on that page (a citation's boxes and quote), or null.
+  viewingPdfHighlight: PdfHighlight | null;
   webSearchProgress: string | null; // Current web search progress message
   thinkingProgress: string | null; // Summarized model reasoning streamed during generation
+  runProgress: RunProgress | null; // Long-context / deep-run progress for the query in flight
+
+  // Projects
+  projects: Project[];
+  activeProjectId: string | null;
   toasts: ToastMessage[]; // Toast notifications
 
   // Batch upload
@@ -570,6 +854,7 @@ export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
   enableGeneralKnowledge: true,
   enableWebSearch: false,
   enablePdfUpload: false,
+  useProfile: true,
 };
 
 // System prompts types for customization.
