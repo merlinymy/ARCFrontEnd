@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout, ChatPage, LibraryPage, LoginPage, HealthStatusPanel } from './components';
@@ -6,6 +6,7 @@ import { PromptsPage } from './components/PromptsPage';
 import { ProfilePage } from './components/ProfilePage';
 import { ProjectsPage } from './components/ProjectsPage';
 import { BibliographyPage } from './components/Bibliography';
+import { WritingPage } from './components/Writing';
 import { ToastContainer } from './components/Toast';
 import { BatchUploadPanel } from './components/BatchUploadPanel';
 import { Loader2 } from 'lucide-react';
@@ -16,6 +17,10 @@ const PdfViewer = lazy(() => import('./components/PdfViewer').then((m) => ({ def
 function AppContent() {
   const { state, removeToast } = useApp();
   const { activePage, viewingPdfId } = state;
+  // The writing page stays mounted once opened (hidden when another page is shown),
+  // so a run that takes minutes is not lost by looking at the library meanwhile.
+  const [writingOpened, setWritingOpened] = useState(false);
+  if (activePage === 'writing' && !writingOpened) setWritingOpened(true);
 
   return (
     <>
@@ -23,6 +28,11 @@ function AppContent() {
         {activePage === 'chat' && <ChatPage />}
         {activePage === 'library' && <LibraryPage />}
         {activePage === 'bibliography' && <BibliographyPage />}
+        {writingOpened && (
+          <div hidden={activePage !== 'writing'} className="flex-1 flex flex-col min-h-0">
+            <WritingPage />
+          </div>
+        )}
         {activePage === 'prompts' && <PromptsPage />}
         {activePage === 'health' && <HealthStatusPanel />}
         {activePage === 'profile' && <ProfilePage />}

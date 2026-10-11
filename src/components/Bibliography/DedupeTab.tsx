@@ -212,7 +212,7 @@ function GroupCard({
 }
 
 export function DedupeTab({ version, onChanged, onNavigate }: { version: number; onChanged: () => void; onNavigate: (tab: BibliographyTabId) => void }) {
-  const { showToast } = useApp();
+  const { showToast, refreshPapers } = useApp();
   const [decision, setDecision] = useState<'pending' | 'accepted' | 'rejected' | 'all'>('pending');
   const [kind, setKind] = useState<DedupeKind | ''>('');
   const [verifyBytes, setVerifyBytes] = useState(false);
@@ -286,7 +286,10 @@ export function DedupeTab({ version, onChanged, onNavigate }: { version: number;
   const notifyDecision = useCallback(() => {
     ownChange.current = true;
     onChanged();
-  }, [onChanged]);
+    // A decision hides (or restores) papers: the app's cached paper list, which the library page, the
+    // sidebar count and the PDF viewer read, must be fetched again.
+    void refreshPapers();
+  }, [onChanged, refreshPapers]);
 
   const winnerOf = useCallback((g: DedupeGroup) => winners[g.group_id] ?? g.proposed_winner, [winners]);
 

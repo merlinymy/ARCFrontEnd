@@ -718,7 +718,7 @@ export interface ToastMessage {
   duration?: number;
 }
 
-export type AppPage = 'chat' | 'library' | 'bibliography' | 'prompts' | 'health' | 'profile' | 'projects';
+export type AppPage = 'chat' | 'library' | 'bibliography' | 'prompts' | 'health' | 'profile' | 'projects' | 'writing';
 
 /** What the PDF viewer should draw over the page it opens at. */
 export interface PdfHighlight {

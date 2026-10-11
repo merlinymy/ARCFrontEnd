@@ -10,6 +10,7 @@ import {
   Upload,
   UserRound,
   FolderKanban,
+  PenLine,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +24,7 @@ export function Header() {
   const navItems = [
     { page: 'library' as const, icon: FileText, label: 'Library' },
     { page: 'projects' as const, icon: FolderKanban, label: 'Projects' },
+    { page: 'writing' as const, icon: PenLine, label: 'Writing' },
     { page: 'profile' as const, icon: UserRound, label: 'Profile' },
     { page: 'bibliography' as const, icon: BookMarked, label: 'Bibliography' },
     { page: 'prompts' as const, icon: Settings, label: 'Prompts' },

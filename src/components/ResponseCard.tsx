@@ -170,7 +170,7 @@ function EntailmentSummary({ message }: { message: Message }) {
   );
 }
 
-function AnswerFooter({ message }: { message: Message }) {
+export function AnswerFooter({ message }: { message: Message }) {
   const { setActivePage } = useApp();
   const m = message.metadata;
   if (!m) return null;
@@ -284,7 +284,7 @@ function AnswerFooter({ message }: { message: Message }) {
 // Notices: a refused, failed or unfinished turn is not an answer
 // ---------------------------------------------------------------------------
 
-function AnswerNotice({ message }: { message: Message }) {
+export function AnswerNotice({ message }: { message: Message }) {
   const m = message.metadata;
   const status = m?.answerStatus ?? 'error';
   const calls = m?.deep?.tool_calls ?? [];

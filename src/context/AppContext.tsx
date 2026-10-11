@@ -170,7 +170,7 @@ type Action =
   | { type: 'REMOVE_TOAST'; payload: string };
 
 // Progress events of the run in flight (long-context and deep stances)
-type RunEvent =
+export type RunEvent =
   | { kind: 'start' }
   | { kind: 'end' }
   | { kind: 'long_context'; used: boolean; reason?: string; papers: number }
@@ -185,7 +185,7 @@ function emptyDeep(): NonNullable<RunProgress['deep']> {
   return { toolCalls: [], passagesFound: 0, pauses: 0, finalTurn: false, narrationResets: 0 };
 }
 
-function reduceRun(prev: RunProgress | null, event: RunEvent): RunProgress | null {
+export function reduceRun(prev: RunProgress | null, event: RunEvent): RunProgress | null {
   if (event.kind === 'start') {
     return { longContext: null, deep: null, trimmedTurns: 0, startedAt: Date.now() };
   }

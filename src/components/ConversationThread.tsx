@@ -42,7 +42,7 @@ function formatElapsed(seconds: number): string {
 const RECENT_CALLS_SHOWN = 4;
 
 // What a long run is doing: papers read whole, or a deep stance's tool loop.
-function RunDetails({ run, deepMode }: { run: RunProgress | null; deepMode: boolean }) {
+export function RunDetails({ run, deepMode }: { run: RunProgress | null; deepMode: boolean }) {
   const elapsed = useElapsedSeconds(run?.startedAt);
   if (!run) return null;
 

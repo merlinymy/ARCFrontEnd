@@ -224,31 +224,25 @@ export async function queryPapers(
   return { ...data, latency };
 }
 
-// Stream query with real-time progress updates
-export async function queryPapersStream(
-  question: string,
-  onProgress: (event: StreamEvent) => void,
-  options?: QueryRequestOptions
+/**
+ * POST a JSON body and read the Server-Sent Events the response carries
+ * (`data: <json>` lines), handing each parsed event to `onEvent`. Used by the
+ * query stream and the writing streams, which share the event framing.
+ */
+export async function postEventStream<E>(
+  path: string,
+  body: unknown,
+  onEvent: (event: E) => void,
+  signal?: AbortSignal
 ): Promise<void> {
-  const requestBody = buildQueryBody(question, options);
-
-  // Log the request body for debugging
-  console.log('[API] queryPapersStream request body:', {
-    mode: requestBody.mode,
-    response_mode: requestBody.response_mode,
-    enable_general_knowledge: requestBody.enable_general_knowledge,
-    enable_web_search: requestBody.enable_web_search,
-    use_profile: requestBody.use_profile,
-    project_id: requestBody.project_id,
-  });
-
-  const response = await fetch(`${API_BASE}/query/stream`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -281,14 +275,14 @@ export async function queryPapersStream(
     if (!line.startsWith('data: ')) return;
     const jsonStr = line.slice(6).trim();
     if (!jsonStr) return;
-    let event: StreamEvent;
+    let event: E;
     try {
-      event = JSON.parse(jsonStr) as StreamEvent;
+      event = JSON.parse(jsonStr) as E;
     } catch (e) {
       console.error('Failed to parse SSE event:', e, jsonStr);
       return;
     }
-    onProgress(event);
+    onEvent(event);
   };
 
   try {
@@ -315,6 +309,27 @@ export async function queryPapersStream(
     // If the handler threw (an `error` event), stop the server streaming to nobody.
     reader.cancel().catch(() => {});
   }
+}
+
+// Stream query with real-time progress updates
+export async function queryPapersStream(
+  question: string,
+  onProgress: (event: StreamEvent) => void,
+  options?: QueryRequestOptions
+): Promise<void> {
+  const requestBody = buildQueryBody(question, options);
+
+  // Log the request body for debugging
+  console.log('[API] queryPapersStream request body:', {
+    mode: requestBody.mode,
+    response_mode: requestBody.response_mode,
+    enable_general_knowledge: requestBody.enable_general_knowledge,
+    enable_web_search: requestBody.enable_web_search,
+    use_profile: requestBody.use_profile,
+    project_id: requestBody.project_id,
+  });
+
+  await postEventStream<StreamEvent>('/query/stream', requestBody, onProgress);
 }
 
 // Get health status
