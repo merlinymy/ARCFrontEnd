@@ -4,6 +4,7 @@ import {
   Activity,
   LogOut,
   FileText,
+  BookMarked,
   Settings,
   Menu,
   Upload,
@@ -23,6 +24,7 @@ export function Header() {
     { page: 'library' as const, icon: FileText, label: 'Library' },
     { page: 'projects' as const, icon: FolderKanban, label: 'Projects' },
     { page: 'profile' as const, icon: UserRound, label: 'Profile' },
+    { page: 'bibliography' as const, icon: BookMarked, label: 'Bibliography' },
     { page: 'prompts' as const, icon: Settings, label: 'Prompts' },
     { page: 'health' as const, icon: Activity, label: 'Health' },
   ];

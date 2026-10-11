@@ -5,6 +5,7 @@ import { Layout, ChatPage, LibraryPage, LoginPage, HealthStatusPanel } from './c
 import { PromptsPage } from './components/PromptsPage';
 import { ProfilePage } from './components/ProfilePage';
 import { ProjectsPage } from './components/ProjectsPage';
+import { BibliographyPage } from './components/Bibliography';
 import { ToastContainer } from './components/Toast';
 import { BatchUploadPanel } from './components/BatchUploadPanel';
 import { Loader2 } from 'lucide-react';
@@ -21,6 +22,7 @@ function AppContent() {
       <Layout>
         {activePage === 'chat' && <ChatPage />}
         {activePage === 'library' && <LibraryPage />}
+        {activePage === 'bibliography' && <BibliographyPage />}
         {activePage === 'prompts' && <PromptsPage />}
         {activePage === 'health' && <HealthStatusPanel />}
         {activePage === 'profile' && <ProfilePage />}
