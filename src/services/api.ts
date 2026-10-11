@@ -13,6 +13,13 @@ import type {
   AnswerMode,
   PromptGroup,
   PaperFigureList,
+  LibraryMapResponse,
+  LibraryMapPaperDetail,
+  LibraryMapCompare,
+  LibraryMapPassages,
+  LibraryMapFootprint,
+  LibraryMapEngineering,
+  LibraryMapCollections,
 } from '../types';
 import { getAuthToken } from '../context/AuthContext';
 
@@ -496,6 +503,94 @@ export async function deletePaper(paperId: string): Promise<DeleteResponse> {
     method: 'DELETE',
   });
   return handleResponse<DeleteResponse>(response);
+}
+
+// =============================================================================
+// Library Map API (read-only; see the Library Map contract)
+// =============================================================================
+
+// The whole map in one payload (prebuilt artifact, gzip on the wire).
+// 404 means the map has not been built; the detail names the build command.
+export async function getLibraryMap(signal?: AbortSignal): Promise<LibraryMapResponse> {
+  const response = await fetch(`${API_BASE}/library-map`, {
+    headers: getAuthHeaders(),
+    signal,
+  });
+  return handleResponse<LibraryMapResponse>(response);
+}
+
+// Neighbors under every lens plus the paper's full section structure
+export async function getLibraryMapPaper(
+  paperId: string,
+  signal?: AbortSignal
+): Promise<LibraryMapPaperDetail> {
+  const response = await fetch(`${API_BASE}/library-map/papers/${encodeURIComponent(paperId)}`, {
+    headers: getAuthHeaders(),
+    signal,
+  });
+  return handleResponse<LibraryMapPaperDetail>(response);
+}
+
+// Why two papers are (or aren't) similar. Reads Qdrant live: 503 when it is down.
+export async function getLibraryMapCompare(
+  a: string,
+  b: string,
+  signal?: AbortSignal
+): Promise<LibraryMapCompare> {
+  const params = new URLSearchParams({ a, b });
+  const response = await fetch(`${API_BASE}/library-map/compare?${params}`, {
+    headers: getAuthHeaders(),
+    signal,
+  });
+  return handleResponse<LibraryMapCompare>(response);
+}
+
+// Which papers ARC answers have cited, from the current user's conversations.
+// Auth required (401 without a valid token); callers hide footprint features on error.
+export async function getLibraryMapFootprint(signal?: AbortSignal): Promise<LibraryMapFootprint> {
+  const response = await fetch(`${API_BASE}/library-map/footprint`, {
+    headers: getAuthHeaders(),
+    signal,
+  });
+  return handleResponse<LibraryMapFootprint>(response);
+}
+
+// Engineering view (v2.1-O): what the pipeline produced -- paper layout, section labels,
+// role-inference report. `collection` defaults to the active one; 404 when not built.
+export async function getLibraryMapEngineering(collection?: string, signal?: AbortSignal): Promise<LibraryMapEngineering> {
+  const query = collection ? `?${new URLSearchParams({ collection })}` : '';
+  const response = await fetch(`${API_BASE}/library-map/engineering${query}`, {
+    headers: getAuthHeaders(),
+    signal,
+  });
+  return handleResponse<LibraryMapEngineering>(response);
+}
+
+// Every collection that has a built map (v2.1-N)
+export async function getLibraryMapCollections(signal?: AbortSignal): Promise<LibraryMapCollections> {
+  const response = await fetch(`${API_BASE}/library-map/collections`, {
+    headers: getAuthHeaders(),
+    signal,
+  });
+  return handleResponse<LibraryMapCollections>(response);
+}
+
+// The passages of 1-12 papers projected jointly into 2-D, computed on request
+export async function getLibraryMapPassages(
+  paperIds: string[],
+  options?: { maxPerPaper?: number; includeCaptions?: boolean },
+  signal?: AbortSignal
+): Promise<LibraryMapPassages> {
+  const params = new URLSearchParams({
+    ids: paperIds.join(','),
+    max_per_paper: String(options?.maxPerPaper ?? 150),
+    include_captions: String(options?.includeCaptions ?? false),
+  });
+  const response = await fetch(`${API_BASE}/library-map/passages?${params}`, {
+    headers: getAuthHeaders(),
+    signal,
+  });
+  return handleResponse<LibraryMapPassages>(response);
 }
 
 // Update paper metadata
@@ -1233,6 +1328,14 @@ export const api = {
   getFigureImageUrl,
   getPaperFigures,
   deletePaper,
+  // Library Map
+  getLibraryMap,
+  getLibraryMapPaper,
+  getLibraryMapCompare,
+  getLibraryMapPassages,
+  getLibraryMapFootprint,
+  getLibraryMapEngineering,
+  getLibraryMapCollections,
   searchPapers,
   uploadPaper,
   uploadPaperStream,

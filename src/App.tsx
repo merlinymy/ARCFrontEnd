@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout, ChatPage, LibraryPage, PdfViewer, LoginPage, HealthStatusPanel } from './components';
@@ -5,6 +6,9 @@ import { PromptsPage } from './components/PromptsPage';
 import { ToastContainer } from './components/Toast';
 import { BatchUploadPanel } from './components/BatchUploadPanel';
 import { Loader2 } from 'lucide-react';
+
+// Canvas map + d3 modules load on demand, outside the main bundle
+const LibraryMapPage = lazy(() => import('./components/LibraryMap/LibraryMapPage'));
 
 function AppContent() {
   const { state, removeToast } = useApp();
@@ -17,6 +21,17 @@ function AppContent() {
         {activePage === 'library' && <LibraryPage />}
         {activePage === 'prompts' && <PromptsPage />}
         {activePage === 'health' && <HealthStatusPanel />}
+        {activePage === 'map' && (
+          <Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900">
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              </div>
+            }
+          >
+            <LibraryMapPage />
+          </Suspense>
+        )}
 
         {/* Global PDF Viewer - works from any page */}
         {viewingPdfId && <PdfViewer paperId={viewingPdfId} />}

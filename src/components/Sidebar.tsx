@@ -6,6 +6,7 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeft,
+  Waypoints,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { MinimizedUploadWidget } from './MinimizedUploadWidget';
@@ -114,6 +115,21 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             aria-label="Paper Library"
           >
             <FileText className="w-5 h-5" />
+          </button>
+        </Tooltip>
+
+        {/* Library Map */}
+        <Tooltip content="Library Map" position="right">
+          <button
+            onClick={() => setActivePage('map')}
+            className={`p-2.5 rounded-lg transition-colors mt-1 ${
+              activePage === 'map'
+                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
+            }`}
+            aria-label="Library Map"
+          >
+            <Waypoints className="w-5 h-5" />
           </button>
         </Tooltip>
       </aside>
@@ -236,6 +252,25 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             </span>
             <ChevronRight className="w-4 h-4 text-gray-400" />
           </div>
+        </button>
+        <button
+          onClick={() => {
+            setActivePage('map');
+            if (window.innerWidth < 768) {
+              toggleSidebar();
+            }
+          }}
+          className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors text-sm ${
+            activePage === 'map'
+              ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+              : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Waypoints className="w-4 h-4" />
+            <span>Library Map</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-400" />
         </button>
       </div>
 
