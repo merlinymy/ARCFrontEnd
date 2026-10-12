@@ -19,6 +19,7 @@ import { useApp } from '../context/AppContext';
 import { api, getPdfDownloadUrl, getPdfUrl } from '../services/api';
 import type { PageHighlight, PdfHighlight } from '../types';
 import { locationNote } from '../lib/citations';
+import { tightBoxesForCitation } from '../lib/pdfCitationBoxes';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -249,14 +250,45 @@ export function PdfViewer({ paperId }: PdfViewerProps) {
     };
   }, [doc, pageNumber, zoom, scrollerWidth]);
 
+  // ---- sentence-level boxes, from the PDF's own text layer --------------------
+  // The backend's boxes are per paragraph. The cited text is looked for in the
+  // text layer and boxed tightly; null means it was not found with confidence,
+  // and the backend's boxes are kept (the reason is logged to the console).
+  const [tight, setTight] = useState<{
+    doc: PDFDocumentProxy;
+    highlight: PdfHighlight;
+    boxes: PageHighlight[] | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!doc || !highlight || !highlight.quote || highlight.highlights.length === 0) return;
+    let cancelled = false;
+    tightBoxesForCitation(doc, highlight).then((boxes) => {
+      if (!cancelled) setTight({ doc, highlight, boxes });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc, highlight]);
+
+  // Until the text layer has answered, the coarse boxes are not drawn: they
+  // would flash and then shrink.
+  const resolving =
+    Boolean(doc && highlight?.quote) &&
+    (highlight?.highlights.length ?? 0) > 0 &&
+    !(tight?.doc === doc && tight?.highlight === highlight);
+  const activeBoxes = useMemo(
+    () => (tight?.doc === doc && tight?.highlight === highlight && tight.boxes) || highlight?.highlights || [],
+    [tight, doc, highlight]
+  );
+
   // ---- the boxes on this page ------------------------------------------------
   const boxesHere = useMemo(
-    () => (highlight?.highlights ?? []).filter((h) => h.page === pageNumber),
-    [highlight, pageNumber]
+    () => (resolving ? [] : activeBoxes.filter((h) => h.page === pageNumber)),
+    [activeBoxes, resolving, pageNumber]
   );
   const boxesElsewhere = useMemo(
-    () => [...new Set((highlight?.highlights ?? []).map((h) => h.page))].filter((p) => p !== pageNumber),
-    [highlight, pageNumber]
+    () => (resolving ? [] : [...new Set(activeBoxes.map((h) => h.page))].filter((p) => p !== pageNumber)),
+    [activeBoxes, resolving, pageNumber]
   );
 
   // Bring the highlight into view once its page is drawn; a page without one
