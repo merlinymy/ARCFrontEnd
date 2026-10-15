@@ -851,7 +851,11 @@ export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
   enableCitationCheck: true,
   maxChunksPerPaper: 'auto',
   responseMode: 'detailed',
-  enableGeneralKnowledge: true,
+  // Off by default since 2026-10-15. With it on, a synthesis question got
+  // confident procedure the library could not support - including a
+  // self-contradictory stoichiometry - under a disclaimer a reader acts on
+  // anyway. The toggle in QueryInput still turns it on per query.
+  enableGeneralKnowledge: false,
   enableWebSearch: false,
   enablePdfUpload: false,
   useProfile: true,
