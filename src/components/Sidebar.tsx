@@ -2,6 +2,8 @@ import {
   Plus,
   MessageSquare,
   FileText,
+  BookMarked,
+  PenLine,
   Trash2,
   ChevronRight,
   PanelLeftClose,
@@ -102,6 +104,36 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
 
         {/* Spacer */}
         <div className="flex-1" />
+
+        {/* Writing */}
+        <Tooltip content="Writing" position="right">
+          <button
+            onClick={() => setActivePage('writing')}
+            className={`p-2.5 rounded-lg transition-colors mb-1 ${
+              activePage === 'writing'
+                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
+            }`}
+            aria-label="Writing"
+          >
+            <PenLine className="w-5 h-5" />
+          </button>
+        </Tooltip>
+
+        {/* Bibliography */}
+        <Tooltip content="Bibliography" position="right">
+          <button
+            onClick={() => setActivePage('bibliography')}
+            className={`p-2.5 rounded-lg transition-colors mb-1 ${
+              activePage === 'bibliography'
+                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
+            }`}
+            aria-label="Bibliography"
+          >
+            <BookMarked className="w-5 h-5" />
+          </button>
+        </Tooltip>
 
         {/* Paper Library */}
         <Tooltip content={`Library (${state.totalPapers || state.papers?.length || 0})`} position="right">
@@ -225,6 +257,52 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             </div>
           ))
         )}
+      </div>
+
+      {/* Writing Section */}
+      <div className="shrink-0">
+        <button
+          onClick={() => {
+            setActivePage('writing');
+            if (window.innerWidth < 768) {
+              toggleSidebar();
+            }
+          }}
+          className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors text-sm ${
+            activePage === 'writing'
+              ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+              : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <PenLine className="w-4 h-4" />
+            <span>Writing</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-400" />
+        </button>
+      </div>
+
+      {/* Bibliography Section */}
+      <div className="shrink-0">
+        <button
+          onClick={() => {
+            setActivePage('bibliography');
+            if (window.innerWidth < 768) {
+              toggleSidebar();
+            }
+          }}
+          className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors text-sm ${
+            activePage === 'bibliography'
+              ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+              : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <BookMarked className="w-4 h-4" />
+            <span>Bibliography</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-400" />
+        </button>
       </div>
 
       {/* Paper Library Section */}

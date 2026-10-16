@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageSquare, Sparkles, Check, Loader2, SkipForward, AlertTriangle, Globe, BookOpen, Upload, Settings } from 'lucide-react';
+import { MessageSquare, Sparkles, Check, Loader2, SkipForward, AlertTriangle, Globe, BookOpen, Upload, Settings, Wrench } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { ResponseCard } from './ResponseCard';
-import type { PipelineStepInfo } from '../types';
+import { describeToolCall } from '../lib/deep';
+import type { PipelineStepInfo, RunProgress } from '../types';
 
 // Pipeline step status icon
 function StepIcon({ status }: { status: PipelineStepInfo['status'] }) {
@@ -20,15 +21,108 @@ function StepIcon({ status }: { status: PipelineStepInfo['status'] }) {
   }
 }
 
+// Seconds since `startedAt`, ticking once a second. A deep run can take
+// minutes; a running clock is what tells the reader it is working, not stuck.
+function useElapsedSeconds(startedAt: number | undefined) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!startedAt) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [startedAt]);
+  return startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0;
+}
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
+}
+
+const RECENT_CALLS_SHOWN = 4;
+
+// What a long run is doing: papers read whole, or a deep stance's tool loop.
+export function RunDetails({ run, deepMode }: { run: RunProgress | null; deepMode: boolean }) {
+  const elapsed = useElapsedSeconds(run?.startedAt);
+  if (!run) return null;
+
+  const deep = run.deep;
+  const calls = deep?.toolCalls ?? [];
+  const recent = calls.slice(-RECENT_CALLS_SHOWN);
+  const hidden = calls.length - recent.length;
+
+  return (
+    <div className="mb-4 pb-4 border-b border-gray-100 dark:border-gray-700 space-y-2" role="status" aria-live="polite">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="font-medium text-gray-900 dark:text-gray-100">
+          {deepMode || deep ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Wrench className="w-4 h-4 text-blue-500" aria-hidden="true" />
+              {deep?.finalTurn
+                ? 'Writing the final answer'
+                : calls.length > 0
+                ? 'Working through the library'
+                : 'Starting a multi-step run'}
+            </span>
+          ) : run.longContext?.used ? (
+            <span className="inline-flex items-center gap-1.5">
+              <BookOpen className="w-4 h-4 text-teal-500" aria-hidden="true" />
+              Reading {run.longContext.papers === 1 ? 'the full paper' : `${run.longContext.papers} papers in full`}
+            </span>
+          ) : null}
+        </span>
+        <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">{formatElapsed(elapsed)}</span>
+      </div>
+
+      {(deepMode || deep) && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          This stance searches the library over several steps before it answers, so it takes
+          longer than a plain question: often a minute or more.
+          {calls.length > 0 && (
+            <>
+              {' '}
+              {calls.length} lookup{calls.length === 1 ? '' : 's'} so far
+              {deep && deep.passagesFound > 0 ? `, ${deep.passagesFound} passages found` : ''}
+              {deep && deep.pauses > 0 ? `, paused ${deep.pauses}\u00d7` : ''}.
+            </>
+          )}
+        </p>
+      )}
+
+      {recent.length > 0 && (
+        <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-0.5">
+          {hidden > 0 && <li className="text-gray-400 dark:text-gray-500">{"\u2026"} {hidden} earlier</li>}
+          {recent.map((call, i) => (
+            <li key={hidden + i} className="truncate">
+              {describeToolCall(call.name, call.input)}
+              {call.passages > 0 && ` \u2014 ${call.passages} passage${call.passages === 1 ? '' : 's'}`}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {run.longContext && !run.longContext.used && run.longContext.reason && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Searching the selected papers instead of reading them whole: {run.longContext.reason}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Pipeline progress display component
 function PipelineProgress({
   steps,
   webSearchProgress,
   thinkingProgress,
+  runProgress,
+  deepMode,
 }: {
   steps: PipelineStepInfo[];
   webSearchProgress?: string | null;
   thinkingProgress?: string | null;
+  runProgress?: RunProgress | null;
+  deepMode: boolean;
 }) {
   const activeStep = steps.find((s) => s.status === 'active');
 
@@ -48,6 +142,9 @@ function PipelineProgress({
           </div>
         </div>
       )}
+
+      {/* Long-context and deep runs: what is happening, and for how long */}
+      <RunDetails run={runProgress ?? null} deepMode={deepMode} />
 
       {/* Current step indicator */}
       {activeStep && !webSearchProgress && (
@@ -133,7 +230,8 @@ interface ConversationThreadProps {
 
 export function ConversationThread({ onScroll }: ConversationThreadProps) {
   const { state, setActivePage, openUploadPanel } = useApp();
-  const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState, webSearchProgress, thinkingProgress } = state;
+  const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState, webSearchProgress, thinkingProgress, runProgress } = state;
+  const deepMode = state.queryOptions.mode === 'develop' || state.queryOptions.mode === 'critique' || state.queryOptions.mode === 'draft';
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -310,7 +408,7 @@ export function ConversationThread({ onScroll }: ConversationThreadProps) {
 
                 {/* Pipeline progress or simple loading */}
                 {pipelineProgress ? (
-                  <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} thinkingProgress={thinkingProgress} />
+                  <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} thinkingProgress={thinkingProgress} runProgress={runProgress} deepMode={deepMode} />
                 ) : (
                   <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
                     <div className="flex items-center gap-3">
@@ -329,7 +427,7 @@ export function ConversationThread({ onScroll }: ConversationThreadProps) {
         {/* Show loading state when isLoading but no pending message */}
         {isLoading && messageGroups.length > 0 && messageGroups[messageGroups.length - 1].responses.length > 0 && (
           pipelineProgress ? (
-            <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} thinkingProgress={thinkingProgress} />
+            <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} thinkingProgress={thinkingProgress} runProgress={runProgress} deepMode={deepMode} />
           ) : (
             <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
               <div className="flex items-center gap-3">

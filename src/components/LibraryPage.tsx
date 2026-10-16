@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Search, Upload, Grid, List, SortAsc, SortDesc, FileText, Loader2, MessageSquare, X, Filter, FileUp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { PaperCard } from './PaperCard';
+import { LibraryReferences } from './LibraryReferences';
+import type { LibrarySortBy } from '../types/bibliography';
 
 import { InfoTooltip } from './Tooltip';
 import { searchPapers, type PaperSearchResult, getPapers } from '../services/api';
@@ -10,6 +12,13 @@ import type { Paper } from '../types';
 type SortField = 'title' | 'year' | 'chunkCount' | 'relevance' | 'uploadDate';
 type SortOrder = 'asc' | 'desc';
 type ViewMode = 'grid' | 'list';
+// PDF papers, reference-only entries (imported or added by hand), or both.
+type KindView = 'all' | 'paper' | 'reference';
+
+// Reference-only entries have no chunks and no relevance score: those sorts fall back to date added.
+function referenceSortBy(field: SortField): LibrarySortBy {
+  return field === 'title' || field === 'year' ? field : 'indexed_at';
+}
 
 export function LibraryPage() {
   const { state, dispatch, setActivePage, createNewConversation, openUploadPanel, deletePaper } = useApp();
@@ -25,6 +34,8 @@ export function LibraryPage() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedPaperIds, setSelectedPaperIds] = useState<Set<string>>(new Set());
   const [enablePdfUpload, setEnablePdfUpload] = useState(false);
+  const [kindView, setKindView] = useState<KindView>('all');
+  const [referenceTotal, setReferenceTotal] = useState<number | null>(null);
 
   // Search pagination state
   const [totalSearchResults, setTotalSearchResults] = useState(0);
@@ -229,7 +240,7 @@ export function LibraryPage() {
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [searchQuery, textFilter, hasMoreBrowse, isLoadingBrowse, sortField, sortOrder, loadBrowsePapers]);
+  }, [searchQuery, textFilter, hasMoreBrowse, isLoadingBrowse, sortField, sortOrder, loadBrowsePapers, kindView]);
 
   // Debounce text filter
   useEffect(() => {
@@ -368,6 +379,7 @@ export function LibraryPage() {
                   ? `${loadedCount} of ${displayCount} papers match filter`
                   : `${loadedCount} of ${displayCount} papers loaded`
                 }
+                {kindView !== 'paper' && referenceTotal !== null && ` · ${referenceTotal} reference-only ${referenceTotal === 1 ? 'entry' : 'entries'}`}
               </p>
             </div>
           </div>
@@ -443,6 +455,18 @@ export function LibraryPage() {
             </button>
           </div>
 
+            {/* Which kinds of entry */}
+            <select
+              value={kindView}
+              onChange={(e) => setKindView(e.target.value as KindView)}
+              aria-label="Show"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">PDF papers and references</option>
+              <option value="paper">PDF papers only</option>
+              <option value="reference">Reference-only entries only</option>
+            </select>
+
             {/* View Mode */}
             <div className="flex items-center border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
             <button
@@ -507,7 +531,7 @@ export function LibraryPage() {
 
       {/* Paper Grid/List */}
       <div className="flex-1 overflow-y-auto p-6">
-        {filteredPapers.length === 0 ? (
+        {kindView !== 'reference' && (filteredPapers.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400">
             {browsePapers.length === 0 && !searchQuery.trim() && !textFilter.trim() && !isLoadingBrowse ? (
               <>
@@ -622,6 +646,15 @@ export function LibraryPage() {
               </div>
             )}
           </>
+        ))}
+
+        {kindView !== 'paper' && (
+          <LibraryReferences
+            search={searchQuery.trim() || textFilter.trim()}
+            sortBy={referenceSortBy(sortField)}
+            sortOrder={sortOrder}
+            onTotal={setReferenceTotal}
+          />
         )}
       </div>
 

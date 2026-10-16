@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { InfoTooltip } from './Tooltip';
+import { formatModelName } from '../lib/citations';
 
 export function HealthStatusPanel() {
   const { state, refreshHealth } = useApp();
@@ -228,7 +229,16 @@ export function HealthStatusPanel() {
             </div>
             <div className="text-sm text-gray-600 dark:text-gray-400">
               Model: {stats?.llm_model ?? 'unknown'}
+              {stats?.llm_model_fallback ? ` (fallback: ${stats.llm_model_fallback})` : ''}
             </div>
+            {stats?.served_models && Object.keys(stats.served_models).length > 0 && (
+              <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                Answers served:{' '}
+                {Object.entries(stats.served_models)
+                  .map(([model, count]) => `${formatModelName(model) ?? model} ${count}`)
+                  .join(', ')}
+              </div>
+            )}
             {services.anthropic?.error && (
               <div className="mt-2 text-sm text-red-600 dark:text-red-400">
                 {services.anthropic.error}

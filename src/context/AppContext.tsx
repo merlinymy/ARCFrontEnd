@@ -22,17 +22,44 @@ import type {
   BatchUpload,
   UploadTask,
   BatchUploadSSEEvent,
-  CitationCheck,
+  Citation,
   ToastMessage,
+  AppPage,
+  PdfHighlight,
+  Project,
+  RunProgress,
+  DeepToolCall,
+  EntailmentReport,
+  AnswerStatus,
 } from '../types';
 import { DEFAULT_QUERY_OPTIONS, PIPELINE_STEPS } from '../types';
 import { api, queryPapersStream, getUserPreferences, updateUserPreferences, type StreamEvent } from '../services/api';
+import { messageFromStored } from '../lib/messages';
 
 // Generate unique ID
 const generateId = () => crypto.randomUUID();
 
 // Check if we're on desktop (lg breakpoint = 1024px)
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+
+// The active project survives a reload. Storage can throw (private windows,
+// blocked site data), and the app must work without it.
+const ACTIVE_PROJECT_KEY = 'activeProjectId';
+function readActiveProject(): string | null {
+  try {
+    return typeof window !== 'undefined' ? localStorage.getItem(ACTIVE_PROJECT_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+function writeActiveProject(id: string | null) {
+  try {
+    if (id) localStorage.setItem(ACTIVE_PROJECT_KEY, id);
+    else localStorage.removeItem(ACTIVE_PROJECT_KEY);
+  } catch {
+    // ignore: a per-viewer convenience only
+  }
+}
 
 // Initial state
 const initialState: AppState = {
@@ -57,8 +84,12 @@ const initialState: AppState = {
   selectedPaperId: null,
   viewingPdfId: null,
   viewingPdfPage: null,
+  viewingPdfHighlight: null,
   webSearchProgress: null,
   thinkingProgress: null,
+  runProgress: null,
+  projects: [],
+  activeProjectId: readActiveProject(),
   // Batch upload
   activeBatchUpload: null,
   isUploadPanelOpen: false,
@@ -74,7 +105,7 @@ type Action =
   | { type: 'SET_THEME'; payload: 'light' | 'dark' }
   | { type: 'TOGGLE_SIDEBAR' }
   | { type: 'SET_SIDEBAR_OPEN'; payload: boolean }
-  | { type: 'SET_ACTIVE_PAGE'; payload: 'chat' | 'library' | 'prompts' | 'health' | 'map' }
+  | { type: 'SET_ACTIVE_PAGE'; payload: AppPage }
   | { type: 'SET_CURRENT_QUERY'; payload: string }
   | { type: 'SET_QUERY_OPTIONS'; payload: Partial<QueryOptions> }
   | { type: 'LOAD_QUERY_OPTIONS'; payload: QueryOptions }
@@ -100,7 +131,7 @@ type Action =
   | { type: 'ADD_PAPER'; payload: Paper }
   | { type: 'UPDATE_PAPER'; payload: { id: string; updates: Partial<Paper> } }
   | { type: 'REMOVE_PAPER'; payload: string }
-  | { type: 'SET_VIEWING_PDF'; payload: { paperId: string | null; page?: number | null } }
+  | { type: 'SET_VIEWING_PDF'; payload: { paperId: string | null; page?: number | null; highlight?: PdfHighlight | null } }
   // Batch upload actions
   | { type: 'START_BATCH_UPLOAD'; payload: BatchUpload }
   | { type: 'UPDATE_UPLOAD_TASK'; payload: { taskId: string; updates: Partial<UploadTask> } }
@@ -112,11 +143,24 @@ type Action =
   // Streaming actions
   | { type: 'START_STREAMING'; payload: { messageId: string; conversationId: string } }
   | { type: 'APPEND_STREAMING_CHUNK'; payload: string }
-  | { type: 'ADD_STREAMING_CITATION'; payload: CitationCheck }
+  | { type: 'ADD_STREAMING_CITATION'; payload: Citation }
+  // The server said to discard the answer so far: text and citations (answer_reset).
+  | { type: 'RESET_STREAMING_ANSWER'; payload: { fallbackFrom?: string | null } }
   | { type: 'STOP_STREAMING' }
   | { type: 'UPDATE_MESSAGE_CONTENT'; payload: { conversationId: string; messageId: string; content: string } }
-  | { type: 'UPDATE_MESSAGE_CITATIONS'; payload: { conversationId: string; messageId: string; citationChecks: CitationCheck[] } }
   | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; message: Message } }
+  // Replace the placeholder (matched by its local id) with the finished message.
+  | { type: 'FINALIZE_MESSAGE'; payload: { conversationId: string; localId: string; message: Message } }
+  // The entailment pass finished. Matched by local id, or by the stored id (a reopened thread).
+  | { type: 'SET_MESSAGE_ENTAILMENT'; payload: { conversationId: string; localId: string; storedId: number | null; entailment: EntailmentReport } }
+  | { type: 'RUN_EVENT'; payload: RunEvent }
+  // Projects
+  | { type: 'SET_PROJECTS'; payload: Project[] }
+  | { type: 'UPSERT_PROJECT'; payload: Project }
+  | { type: 'REMOVE_PROJECT'; payload: string }
+  | { type: 'SET_ACTIVE_PROJECT'; payload: string | null }
+  // After a project list loads: drop a remembered active project that no longer exists.
+  | { type: 'SET_ACTIVE_PROJECT_IF_MISSING'; payload: string[] }
   // Web search actions
   | { type: 'SET_WEB_SEARCH_PROGRESS'; payload: string | null }
   | { type: 'SET_THINKING_PROGRESS'; payload: string | null }
@@ -124,6 +168,47 @@ type Action =
   // Toast actions
   | { type: 'ADD_TOAST'; payload: Omit<ToastMessage, 'id'> }
   | { type: 'REMOVE_TOAST'; payload: string };
+
+// Progress events of the run in flight (long-context and deep stances)
+export type RunEvent =
+  | { kind: 'start' }
+  | { kind: 'end' }
+  | { kind: 'long_context'; used: boolean; reason?: string; papers: number }
+  | { kind: 'history'; trimmedTurns: number }
+  | { kind: 'tool_call'; call: DeepToolCall }
+  | { kind: 'passages'; count: number }
+  | { kind: 'pause'; pauses: number }
+  | { kind: 'final_turn' }
+  | { kind: 'narration_reset' };
+
+function emptyDeep(): NonNullable<RunProgress['deep']> {
+  return { toolCalls: [], passagesFound: 0, pauses: 0, finalTurn: false, narrationResets: 0 };
+}
+
+export function reduceRun(prev: RunProgress | null, event: RunEvent): RunProgress | null {
+  if (event.kind === 'start') {
+    return { longContext: null, deep: null, trimmedTurns: 0, startedAt: Date.now() };
+  }
+  if (event.kind === 'end') return null;
+  if (!prev) return prev;
+  const deep = () => prev.deep ?? emptyDeep();
+  switch (event.kind) {
+    case 'long_context':
+      return { ...prev, longContext: { used: event.used, reason: event.reason, papers: event.papers } };
+    case 'history':
+      return { ...prev, trimmedTurns: event.trimmedTurns };
+    case 'tool_call':
+      return { ...prev, deep: { ...deep(), toolCalls: [...deep().toolCalls, event.call] } };
+    case 'passages':
+      return { ...prev, deep: { ...deep(), passagesFound: deep().passagesFound + event.count } };
+    case 'pause':
+      return { ...prev, deep: { ...deep(), pauses: event.pauses } };
+    case 'final_turn':
+      return { ...prev, deep: { ...deep(), finalTurn: true } };
+    case 'narration_reset':
+      return { ...prev, deep: { ...deep(), narrationResets: deep().narrationResets + 1 } };
+  }
+}
 
 // Reducer
 function appReducer(state: AppState, action: Action): AppState {
@@ -220,11 +305,20 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'SET_CONVERSATION_MESSAGES':
       return {
         ...state,
-        conversations: state.conversations.map((conv) =>
-          conv.id === action.payload.id
-            ? { ...conv, messages: action.payload.messages }
-            : conv
-        ),
+        conversations: state.conversations.map((conv) => {
+          if (conv.id !== action.payload.id) return conv;
+          // A reopened thread arrives from the server before an in-flight
+          // entailment pass has been merged into it: keep showing "checking".
+          const pending = new Set(
+            conv.messages.filter((m) => m.metadata?.entailmentPending).map((m) => m.id)
+          );
+          const messages = action.payload.messages.map((m) =>
+            pending.has(m.id) && m.metadata && !m.metadata.entailment
+              ? { ...m, metadata: { ...m.metadata, entailmentPending: true } }
+              : m
+          );
+          return { ...conv, messages };
+        }),
       };
 
     case 'TOGGLE_PIPELINE_EXPANDED':
@@ -284,6 +378,7 @@ function appReducer(state: AppState, action: Action): AppState {
         papers: state.papers.filter((p) => p.id !== action.payload),
         viewingPdfId: state.viewingPdfId === action.payload ? null : state.viewingPdfId,
         viewingPdfPage: state.viewingPdfId === action.payload ? null : state.viewingPdfPage,
+        viewingPdfHighlight: state.viewingPdfId === action.payload ? null : state.viewingPdfHighlight,
       };
 
     case 'SET_VIEWING_PDF':
@@ -291,6 +386,7 @@ function appReducer(state: AppState, action: Action): AppState {
         ...state,
         viewingPdfId: action.payload.paperId,
         viewingPdfPage: action.payload.page ?? null,
+        viewingPdfHighlight: action.payload.paperId ? action.payload.highlight ?? null : null,
       };
 
     // Batch upload reducers
@@ -362,7 +458,7 @@ function appReducer(state: AppState, action: Action): AppState {
           messageId: action.payload.messageId,
           conversationId: action.payload.conversationId,
           content: '',
-          citationChecks: [],
+          citations: [],
           isStreaming: true,
         },
       };
@@ -390,26 +486,31 @@ function appReducer(state: AppState, action: Action): AppState {
         ),
       };
 
-    case 'ADD_STREAMING_CITATION':
+    case 'ADD_STREAMING_CITATION': {
       if (!state.streamingState) return state;
+      const { conversationId, messageId } = state.streamingState;
+      // A citation id is unique within an answer; a repeat replaces.
+      const withCitation = (list: Citation[]) => [
+        ...list.filter((c) => c.id !== action.payload.id),
+        action.payload,
+      ];
       return {
         ...state,
         streamingState: {
           ...state.streamingState,
-          citationChecks: [...state.streamingState.citationChecks, action.payload],
+          citations: withCitation(state.streamingState.citations),
         },
-        // Also update the message metadata in the conversation
         conversations: state.conversations.map((conv) =>
-          conv.id === state.streamingState?.conversationId
+          conv.id === conversationId
             ? {
                 ...conv,
                 messages: conv.messages.map((msg) =>
-                  msg.id === state.streamingState?.messageId
+                  msg.id === messageId
                     ? {
                         ...msg,
                         metadata: {
                           ...msg.metadata,
-                          citationChecks: [...(state.streamingState?.citationChecks || []), action.payload],
+                          citations: withCitation(msg.metadata?.citations ?? []),
                         },
                       }
                     : msg
@@ -418,6 +519,38 @@ function appReducer(state: AppState, action: Action): AppState {
             : conv
         ),
       };
+    }
+
+    case 'RESET_STREAMING_ANSWER': {
+      if (!state.streamingState) return state;
+      const { conversationId, messageId } = state.streamingState;
+      return {
+        ...state,
+        streamingState: { ...state.streamingState, content: '', citations: [] },
+        conversations: state.conversations.map((conv) =>
+          conv.id === conversationId
+            ? {
+                ...conv,
+                messages: conv.messages.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        content: '',
+                        metadata: {
+                          ...msg.metadata,
+                          citations: [],
+                          ...(action.payload.fallbackFrom !== undefined
+                            ? { fallbackFrom: action.payload.fallbackFrom }
+                            : {}),
+                        },
+                      }
+                    : msg
+                ),
+              }
+            : conv
+        ),
+      };
+    }
 
     case 'STOP_STREAMING':
       return {
@@ -442,29 +575,6 @@ function appReducer(state: AppState, action: Action): AppState {
         ),
       };
 
-    case 'UPDATE_MESSAGE_CITATIONS':
-      return {
-        ...state,
-        conversations: state.conversations.map((conv) =>
-          conv.id === action.payload.conversationId
-            ? {
-                ...conv,
-                messages: conv.messages.map((msg) =>
-                  msg.id === action.payload.messageId
-                    ? {
-                        ...msg,
-                        metadata: {
-                          ...msg.metadata,
-                          citationChecks: action.payload.citationChecks,
-                        },
-                      }
-                    : msg
-                ),
-              }
-            : conv
-        ),
-      };
-
     case 'UPDATE_MESSAGE':
       return {
         ...state,
@@ -481,6 +591,85 @@ function appReducer(state: AppState, action: Action): AppState {
             : conv
         ),
       };
+
+    case 'FINALIZE_MESSAGE':
+      return {
+        ...state,
+        conversations: state.conversations.map((conv) =>
+          conv.id === action.payload.conversationId
+            ? {
+                ...conv,
+                messages: conv.messages.map((msg) =>
+                  msg.id === action.payload.localId ? action.payload.message : msg
+                ),
+              }
+            : conv
+        ),
+      };
+
+    case 'SET_MESSAGE_ENTAILMENT':
+      return {
+        ...state,
+        conversations: state.conversations.map((conv) =>
+          conv.id === action.payload.conversationId
+            ? {
+                ...conv,
+                messages: conv.messages.map((msg) =>
+                  msg.id === action.payload.localId ||
+                  (action.payload.storedId != null &&
+                    (msg.metadata?.messageId === action.payload.storedId ||
+                      msg.id === String(action.payload.storedId)))
+                    ? {
+                        ...msg,
+                        metadata: {
+                          ...msg.metadata,
+                          entailment: action.payload.entailment,
+                          entailmentPending: false,
+                        },
+                      }
+                    : msg
+                ),
+              }
+            : conv
+        ),
+      };
+
+    case 'RUN_EVENT':
+      return { ...state, runProgress: reduceRun(state.runProgress, action.payload) };
+
+    case 'SET_PROJECTS':
+      return { ...state, projects: action.payload };
+
+    case 'UPSERT_PROJECT': {
+      const incoming = action.payload;
+      const moved = new Set(incoming.conversation_ids);
+      const exists = state.projects.some((p) => p.id === incoming.id);
+      const projects = (exists
+        ? state.projects.map((p) => (p.id === incoming.id ? incoming : p))
+        : [incoming, ...state.projects]
+      ).map((p) =>
+        // A conversation belongs to at most one project: linking moves it.
+        p.id === incoming.id
+          ? p
+          : { ...p, conversation_ids: p.conversation_ids.filter((id) => !moved.has(id)) }
+      );
+      return { ...state, projects };
+    }
+
+    case 'REMOVE_PROJECT':
+      return {
+        ...state,
+        projects: state.projects.filter((p) => p.id !== action.payload),
+        activeProjectId: state.activeProjectId === action.payload ? null : state.activeProjectId,
+      };
+
+    case 'SET_ACTIVE_PROJECT':
+      return { ...state, activeProjectId: action.payload };
+
+    case 'SET_ACTIVE_PROJECT_IF_MISSING':
+      return state.activeProjectId && !action.payload.includes(state.activeProjectId)
+        ? { ...state, activeProjectId: null }
+        : state;
 
     case 'SET_WEB_SEARCH_PROGRESS':
       return { ...state, webSearchProgress: action.payload };
@@ -529,7 +718,7 @@ interface AppContextValue {
   // Convenience actions
   setTheme: (theme: 'light' | 'dark') => void;
   toggleSidebar: () => void;
-  setActivePage: (page: 'chat' | 'library' | 'prompts' | 'health' | 'map') => void;
+  setActivePage: (page: AppPage) => void;
   createNewConversation: () => string;
   submitQuery: (query: string) => Promise<void>;
   clearConversation: () => Promise<void>;
@@ -544,7 +733,12 @@ interface AppContextValue {
   loadMorePapers: () => Promise<void>;
   deletePaper: (paperId: string) => Promise<void>;
   updatePaper: (paperId: string, updates: Partial<Paper>) => void;
-  setViewingPdf: (paperId: string | null, page?: number | null) => void;
+  setViewingPdf: (paperId: string | null, page?: number | null, highlight?: PdfHighlight | null) => void;
+  // Projects
+  refreshProjects: () => Promise<void>;
+  setActiveProject: (projectId: string | null) => void;
+  /** Link (or, with null, unlink) a conversation. Resolves to the updated project, or null. */
+  setConversationProject: (conversationId: string, projectId: string | null) => Promise<void>;
   // Batch upload actions
   startBatchUpload: (files: File[]) => Promise<void>;
   cancelUploadTask: (taskId: string) => Promise<void>;
@@ -563,6 +757,19 @@ const AppContext = createContext<AppContextValue | null>(null);
 // Provider component
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+
+  // The conversation a stream is currently writing into. Streaming updates are
+  // addressed by conversation id (not "the active one"), so switching threads
+  // mid-answer is safe; this ref only stops a refetch of that same thread from
+  // replacing the half-built message with the server's (not yet written) copy.
+  const streamingConversationRef = useRef<string | null>(null);
+  // Latest projects, for selectConversation without re-creating it on every change.
+  const projectsRef = useRef<Project[]>([]);
+  projectsRef.current = state.projects;
+
+  useEffect(() => {
+    writeActiveProject(state.activeProjectId);
+  }, [state.activeProjectId]);
 
   // Apply theme to document
   useEffect(() => {
@@ -598,6 +805,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             enableGeneralKnowledge: prefs.enable_general_knowledge,
             enableWebSearch: prefs.enable_web_search,
             enablePdfUpload: prefs.enable_pdf_upload ?? false,
+            // Per message, not a stored preference.
+            useProfile: DEFAULT_QUERY_OPTIONS.useProfile,
           },
         });
       } catch (error) {
@@ -646,7 +855,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'TOGGLE_SIDEBAR' });
   }, []);
 
-  const setActivePage = useCallback((page: 'chat' | 'library' | 'prompts' | 'health' | 'map') => {
+  const setActivePage = useCallback((page: AppPage) => {
     dispatch({ type: 'SET_ACTIVE_PAGE', payload: page });
   }, []);
 
@@ -660,8 +869,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const submitQuery = useCallback(async (query: string) => {
     if (!query.trim()) return;
 
-    const startTime = performance.now();
     dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'RUN_EVENT', payload: { kind: 'start' } });
 
     // Initialize pipeline progress
     const initialProgress: PipelineStepInfo[] = PIPELINE_STEPS.map((step) => ({
@@ -703,6 +912,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!conversationId) {
       throw new Error('Failed to establish conversation ID');
     }
+    const activeConversationId = conversationId;
+    const projectId = state.activeProjectId;
 
     // Add query message
     const queryMessage: Message = {
@@ -713,10 +924,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     dispatch({
       type: 'ADD_MESSAGE',
-      payload: { conversationId, message: queryMessage },
+      payload: { conversationId: activeConversationId, message: queryMessage },
     });
 
-    // Create a placeholder response message for streaming
+    // Create a placeholder response message for streaming. `citations: []`
+    // (an array, not undefined) is what marks it as a W3 message.
     const responseMessageId = generateId();
     const placeholderMessage: Message = {
       id: responseMessageId,
@@ -724,28 +936,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
       content: '',
       timestamp: new Date(),
       metadata: {
-        citationChecks: [], // Will be populated as citations are verified
+        citations: [],
+        claims: [],
       },
     };
     dispatch({
       type: 'ADD_MESSAGE',
-      payload: { conversationId, message: placeholderMessage },
+      payload: { conversationId: activeConversationId, message: placeholderMessage },
     });
 
     // Start streaming state
     dispatch({
       type: 'START_STREAMING',
-      payload: { messageId: responseMessageId, conversationId },
+      payload: { messageId: responseMessageId, conversationId: activeConversationId },
     });
+    streamingConversationRef.current = activeConversationId;
+
+    const startTime = performance.now();
+    const completedSteps: Set<PipelineStepName> = new Set();
+    let streamedThinking = '';
+    let streamedWebSearchContent = '';
+    let webSearchMessageId: string | null = null;
+    // The server sent `complete`: the answer is final and persisted. After this
+    // the stream may still carry a web-search message and the entailment event.
+    let answered = false;
+    let storedMessageId: number | null = null;
+    let entailmentExpected = false;
+    let entailmentArrived = false;
+    let loadingFinished = false;
+
+    // The input is released when the answer is final, not when the stream
+    // closes: the entailment pass runs for a few seconds after `complete` and
+    // nobody should have to wait for it to ask the next question. Idempotent,
+    // so the error path and `finally` can both call it.
+    const finishLoading = () => {
+      if (loadingFinished) return;
+      loadingFinished = true;
+      dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_CURRENT_QUERY', payload: '' });
+      dispatch({ type: 'SET_PIPELINE_PROGRESS', payload: null });
+      dispatch({ type: 'SET_THINKING_PROGRESS', payload: null });
+      dispatch({ type: 'SET_WEB_SEARCH_PROGRESS', payload: null });
+      dispatch({ type: 'RUN_EVENT', payload: { kind: 'end' } });
+      if (streamingConversationRef.current === activeConversationId) {
+        streamingConversationRef.current = null;
+      }
+    };
+
+    const setEntailment = (entailment: EntailmentReport) =>
+      dispatch({
+        type: 'SET_MESSAGE_ENTAILMENT',
+        payload: {
+          conversationId: activeConversationId,
+          localId: responseMessageId,
+          storedId: storedMessageId,
+          entailment,
+        },
+      });
 
     try {
-      let completedSteps: Set<PipelineStepName> = new Set();
-      let streamedContent = '';
-      let streamedThinking = '';
-      let streamedWebSearchContent = '';
-      let webSearchMessageId: string | null = null;
-      const streamedCitations: CitationCheck[] = [];
-
       // Log query options being sent to API
       console.log('[Query] Submitting with options:', {
         mode: state.queryOptions.mode,
@@ -753,6 +1002,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         enableGeneralKnowledge: state.queryOptions.enableGeneralKnowledge,
         enableWebSearch: state.queryOptions.enableWebSearch,
         queryType: state.queryOptions.queryType,
+        useProfile: state.queryOptions.useProfile,
+        projectId,
       });
 
       await queryPapersStream(
@@ -763,10 +1014,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // Cast data to Record for flexible property access
             const data = event.data as Record<string, unknown>;
 
-            // Handle streaming answer chunks
+            // Handle streaming answer chunks. A chunk can be a citation marker
+            // on its own ("⟦3⟧"); the renderer turns it into a chip.
             if (stepName === 'answer_chunk' && data?.chunk) {
               const chunk = data.chunk as string;
-              streamedContent += chunk;
               dispatch({ type: 'APPEND_STREAMING_CHUNK', payload: chunk });
               // The model has started writing the answer; stop showing reasoning
               if (streamedThinking) {
@@ -783,22 +1034,82 @@ export function AppProvider({ children }: { children: ReactNode }) {
               return;
             }
 
-            // Handle citation verification results
-            if (stepName === 'citation_verified' && data) {
-              const citationCheck: CitationCheck = {
-                citation_id: data.citation_id as number,
-                claim: data.claim as string,
-                confidence: data.confidence as number,
-                is_valid: data.is_valid as boolean,
-                explanation: data.explanation as string,
-              };
-              streamedCitations.push(citationCheck);
-              dispatch({ type: 'ADD_STREAMING_CITATION', payload: citationCheck });
+            // A full citation object, always ahead of the chunk holding its marker.
+            if (stepName === 'citation' && data) {
+              dispatch({ type: 'ADD_STREAMING_CITATION', payload: data as unknown as Citation });
               return;
             }
 
-            // Skip answer_complete - we already have the content from chunks
-            if (stepName === 'answer_complete') {
+            // Discard the answer so far: its text and its citations.
+            //   fallback: the answer model declined partway and a fallback restarts.
+            //   tool_use: a deep run's narration before a tool call.
+            if (stepName === 'answer_reset') {
+              const fromModel = typeof data?.from_model === 'string' ? data.from_model : undefined;
+              dispatch({
+                type: 'RESET_STREAMING_ANSWER',
+                payload: data?.reason === 'fallback' ? { fallbackFrom: fromModel ?? null } : {},
+              });
+              if (data?.reason === 'tool_use') {
+                dispatch({ type: 'RUN_EVENT', payload: { kind: 'narration_reset' } });
+              }
+              return;
+            }
+
+            // What this turn carries from the thread.
+            if (stepName === 'memory') {
+              dispatch({
+                type: 'RUN_EVENT',
+                payload: { kind: 'history', trimmedTurns: Number(data?.trimmed_turns ?? 0) },
+              });
+              return;
+            }
+
+            // The selected papers were sent whole, or were not and why.
+            if (stepName === 'long_context') {
+              dispatch({
+                type: 'RUN_EVENT',
+                payload: {
+                  kind: 'long_context',
+                  used: Boolean(data?.used),
+                  reason: typeof data?.reason === 'string' ? data.reason : undefined,
+                  papers: Array.isArray(data?.papers) ? data.papers.length : 0,
+                },
+              });
+              return;
+            }
+
+            // Deep stances: the tool loop.
+            if (stepName === 'tool_call') {
+              dispatch({
+                type: 'RUN_EVENT',
+                payload: {
+                  kind: 'tool_call',
+                  call: {
+                    name: String(data?.name ?? 'tool'),
+                    input: (data?.input as Record<string, unknown>) ?? {},
+                    passages: Number(data?.passages ?? 0),
+                  },
+                },
+              });
+              return;
+            }
+            if (stepName === 'sources_added') {
+              const added = Array.isArray(data?.sources) ? data.sources.length : 0;
+              dispatch({ type: 'RUN_EVENT', payload: { kind: 'passages', count: added } });
+              return;
+            }
+            if (stepName === 'pause_turn') {
+              dispatch({ type: 'RUN_EVENT', payload: { kind: 'pause', pauses: Number(data?.pauses ?? 0) } });
+              return;
+            }
+            if (stepName === 'deep_final_turn') {
+              dispatch({ type: 'RUN_EVENT', payload: { kind: 'final_turn' } });
+              return;
+            }
+
+            // answer_complete: `complete.answer` is authoritative. verification
+            // ({deferred} / {skipped}) only announces the later entailment event.
+            if (stepName === 'answer_complete' || stepName === 'verification') {
               return;
             }
 
@@ -822,14 +1133,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 };
                 dispatch({
                   type: 'ADD_MESSAGE',
-                  payload: { conversationId: conversationId!, message: placeholderWebSearchMessage },
+                  payload: { conversationId: activeConversationId, message: placeholderWebSearchMessage },
                 });
               }
 
               // Append chunk to web search message
               dispatch({
                 type: 'APPEND_WEB_SEARCH_CHUNK',
-                payload: { conversationId: conversationId!, messageId: webSearchMessageId, chunk },
+                payload: { conversationId: activeConversationId, messageId: webSearchMessageId, chunk },
               });
               return;
             }
@@ -894,7 +1205,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               dispatch({
                 type: 'UPDATE_MESSAGE',
                 payload: {
-                  conversationId: conversationId!,
+                  conversationId: activeConversationId,
                   message: {
                     id: webSearchMessageId,
                     type: 'web_search',
@@ -921,7 +1232,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               };
               dispatch({
                 type: 'ADD_MESSAGE',
-                payload: { conversationId: conversationId!, message: webSearchMessage },
+                payload: { conversationId: activeConversationId, message: webSearchMessage },
               });
             }
             // Reset for next query
@@ -929,29 +1240,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
             webSearchMessageId = null;
           } else if (event.type === 'complete') {
             const latency = performance.now() - startTime;
+            answered = true;
+            storedMessageId = event.message_id ?? null;
+            entailmentExpected = Boolean(event.entailment_pending);
 
             // Stop streaming state
             dispatch({ type: 'STOP_STREAMING' });
 
-            // Mark all remaining steps as completed
-            dispatch({ type: 'SET_PIPELINE_PROGRESS', payload: null });
-
-            // Update the existing response message with final content and metadata
-            // Use streamed content if available, otherwise fall back to event.answer
-            const finalContent = streamedContent || event.answer;
-            const finalCitations = streamedCitations.length > 0 ? streamedCitations : event.citation_checks;
-
-            // Update the message with complete data
+            // `complete.answer` replaces whatever was streamed (the contract:
+            // it is authoritative, and for any status but 'ok' it is a notice).
             dispatch({
-              type: 'UPDATE_MESSAGE',
+              type: 'FINALIZE_MESSAGE',
               payload: {
-                conversationId: conversationId!,
+                conversationId: activeConversationId,
+                localId: responseMessageId,
                 message: {
                   id: responseMessageId,
                   type: 'response',
-                  content: finalContent,
+                  content: event.answer,
                   timestamp: new Date(),
                   metadata: {
+                    messageId: storedMessageId,
                     queryType: event.query_type as QueryType,
                     expandedQuery: event.expanded_query,
                     sources: event.sources,
@@ -959,22 +1268,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     rerankedCount: event.reranked_count,
                     latency,
                     warnings: event.warnings,
-                    citationChecks: finalCitations,
+                    citations: event.citations ?? [],
+                    claims: event.claims ?? [],
+                    answerStatus: event.answer_status,
+                    servedModel: event.served_model,
+                    fallbackUsed: event.fallback_used,
+                    stopReason: event.stop_reason,
+                    retrievalMode: event.retrieval_mode,
+                    longContext: event.long_context,
+                    hybridFallback: event.hybrid_fallback,
+                    history: event.history,
+                    profileUsed: event.profile_used,
+                    deep: event.deep,
+                    mode: event.mode,
+                    entailment: null,
+                    entailmentPending: entailmentExpected,
                   },
                 },
               },
             });
 
+            // Release the input; the entailment event (if any) still follows.
+            finishLoading();
+
             // Update conversation title if it's the first query
-            const conversation = state.conversations.find((c) => c.id === conversationId);
+            const conversation = state.conversations.find((c) => c.id === activeConversationId);
             if (conversation?.title === 'New Conversation') {
               dispatch({
                 type: 'UPDATE_CONVERSATION_TITLE',
-                payload: { id: conversationId!, title: query.slice(0, 50) + (query.length > 50 ? '...' : '') },
+                payload: { id: activeConversationId, title: query.slice(0, 50) + (query.length > 50 ? '...' : '') },
               });
             }
+          } else if (event.type === 'entailment') {
+            entailmentArrived = true;
+            setEntailment({
+              status: event.status,
+              model: event.model,
+              labels: event.labels ?? [],
+              summary: event.summary ?? {},
+              error: event.error ?? null,
+              latency_ms: event.latency_ms ?? 0,
+            });
           } else if (event.type === 'error') {
-            dispatch({ type: 'STOP_STREAMING' });
             throw new Error(event.message);
           }
         },
@@ -983,7 +1318,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           effort: state.queryOptions.effort,
           paperIds: state.queryOptions.paperFilter,
           maxChunksPerPaper: state.queryOptions.maxChunksPerPaper,
-          conversationId: conversationId,
+          conversationId: activeConversationId,
           queryType: state.queryOptions.queryType,
           enableHyde: state.queryOptions.enableHyde,
           enableExpansion: state.queryOptions.enableExpansion,
@@ -993,26 +1328,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
           enableGeneralKnowledge: state.queryOptions.enableGeneralKnowledge,
           enableWebSearch: state.queryOptions.enableWebSearch,
           enablePdfUpload: state.queryOptions.enablePdfUpload,
+          useProfile: state.queryOptions.useProfile,
+          projectId,
         }
       );
     } catch (error) {
       console.error('Query failed:', error);
-      // Add error message
-      const errorMessage: Message = {
-        id: generateId(),
-        type: 'response',
-        content: `Error: ${error instanceof Error ? error.message : 'Failed to process query'}`,
-        timestamp: new Date(),
-      };
-      dispatch({
-        type: 'ADD_MESSAGE',
-        payload: { conversationId, message: errorMessage },
-      });
+      const text = error instanceof Error ? error.message : 'Failed to process query';
+      dispatch({ type: 'STOP_STREAMING' });
+      if (!answered) {
+        // The placeholder becomes the error notice. (Adding a second message
+        // would leave an empty answer card above it.)
+        dispatch({
+          type: 'FINALIZE_MESSAGE',
+          payload: {
+            conversationId: activeConversationId,
+            localId: responseMessageId,
+            message: {
+              id: responseMessageId,
+              type: 'response',
+              content: `Error: ${text}`,
+              timestamp: new Date(),
+              metadata: { citations: [], claims: [], answerStatus: 'error' as AnswerStatus },
+            },
+          },
+        });
+      }
     } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-      dispatch({ type: 'SET_CURRENT_QUERY', payload: '' });
-      dispatch({ type: 'SET_PIPELINE_PROGRESS', payload: null });
-      dispatch({ type: 'SET_THINKING_PROGRESS', payload: null });
+      finishLoading();
+      // The answer is on screen but the check never reported (the connection
+      // dropped). Say so quietly instead of spinning forever.
+      if (answered && entailmentExpected && !entailmentArrived) {
+        setEntailment({
+          status: 'error',
+          model: null,
+          labels: [],
+          summary: {},
+          error: 'The connection closed before the check finished.',
+          latency_ms: 0,
+        });
+      }
       // Refresh stats to update query count and cache hit rate
       try {
         const stats = await api.getStats();
@@ -1020,17 +1375,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error('Failed to refresh stats:', error);
       }
-    }
-  }, [state.activeConversationId, state.conversations, state.queryOptions]);
-
-  const clearConversation = useCallback(async () => {
-    try {
-      await api.clearConversation();
-      if (state.activeConversationId) {
-        dispatch({ type: 'DELETE_CONVERSATION', payload: state.activeConversationId });
+      // A turn asked under a project links its conversation to it server side.
+      if (projectId) {
+        try {
+          const { projects } = await api.getProjects();
+          dispatch({ type: 'SET_PROJECTS', payload: projects });
+        } catch (error) {
+          console.error('Failed to refresh projects:', error);
+        }
       }
+    }
+  }, [state.activeConversationId, state.conversations, state.queryOptions, state.activeProjectId]);
+
+  // Since W3 the model's view of a thread is rebuilt from the stored messages
+  // on every turn, and POST /conversation/clear is a no-op: the only thing that
+  // changes what the model sees is deleting the messages. So "clear" deletes
+  // the thread, on the server as well as here.
+  const clearConversation = useCallback(async () => {
+    if (!state.activeConversationId) return;
+    try {
+      await api.deleteConversation(state.activeConversationId);
+      dispatch({ type: 'DELETE_CONVERSATION', payload: state.activeConversationId });
     } catch (error) {
-      console.error('Failed to clear conversation:', error);
+      console.error('Failed to delete conversation:', error);
     }
   }, [state.activeConversationId]);
 
@@ -1086,13 +1453,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const selectConversation = useCallback(async (id: string) => {
     dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: id });
 
-    // Reset the server-side conversation memory for this thread so follow-up
-    // reference resolution can't carry over from whichever thread was open before
-    try {
-      await api.clearConversation(id);
-    } catch (error) {
-      console.debug('Failed to reset server conversation memory:', error);
-    }
+    // Questions asked here go to the project this thread belongs to, if any.
+    // (Staying on another project would silently move this thread into it on
+    // the next turn.)
+    const owner = projectsRef.current.find((p) => p.conversation_ids.includes(id));
+    dispatch({ type: 'SET_ACTIVE_PROJECT', payload: owner?.id ?? null });
+
+    // A stream is still writing into this thread: its half-built message is
+    // newer than anything the server has, so do not replace it.
+    if (streamingConversationRef.current === id) return;
 
     // Always fetch fresh messages from server to ensure we have the latest
     // (removes stale cache issue where messages saved after frontend closed aren't loaded)
@@ -1105,32 +1474,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_QUERY_OPTIONS', payload: { mode: fullConv.mode } });
       }
 
-      const messages: Message[] = (fullConv.messages || []).map((msg) => {
-        // Determine message type from metadata or role
-        let messageType: 'query' | 'response' | 'web_search' = 'response';
-        if (msg.role === 'user') {
-          messageType = 'query';
-        } else if (msg.metadata?.message_type === 'web_search') {
-          messageType = 'web_search';
-        }
-
-        return {
-          id: String(msg.id),
-          type: messageType,
-          content: msg.content,
-          timestamp: new Date(msg.created_at),
-          metadata: {
-            ...msg.metadata,
-            isWebSearch: messageType === 'web_search',
-            webSearchSources: messageType === 'web_search' ? msg.metadata?.sources : undefined,
-          } as Message['metadata'],
-        };
-      });
+      const messages: Message[] = (fullConv.messages || []).map(messageFromStored);
+      // A stream may have started in this thread while the fetch was in flight.
+      if (streamingConversationRef.current === id) return;
       dispatch({ type: 'SET_CONVERSATION_MESSAGES', payload: { id, messages } });
     } catch (error) {
       console.error('Failed to load conversation messages:', error);
     }
-  }, [state.conversations]);
+  }, []);
+
+  // Projects
+  const refreshProjects = useCallback(async () => {
+    try {
+      const { projects } = await api.getProjects();
+      dispatch({ type: 'SET_PROJECTS', payload: projects });
+      // A remembered project that no longer exists must not ride along on queries.
+      dispatch({ type: 'SET_ACTIVE_PROJECT_IF_MISSING', payload: projects.map((p) => p.id) });
+    } catch (error) {
+      console.debug('Failed to fetch projects (user may not be authenticated):', error);
+    }
+  }, []);
+
+  const setActiveProject = useCallback((projectId: string | null) => {
+    dispatch({ type: 'SET_ACTIVE_PROJECT', payload: projectId });
+  }, []);
+
+  const setConversationProject = useCallback(
+    async (conversationId: string, projectId: string | null) => {
+      if (projectId) {
+        const project = await api.linkConversationToProject(projectId, conversationId);
+        dispatch({ type: 'UPSERT_PROJECT', payload: project });
+      } else {
+        // Unlink from whichever project holds it.
+        const owner = projectsRef.current.find((p) => p.conversation_ids.includes(conversationId));
+        if (owner) {
+          await api.unlinkConversationFromProject(owner.id, conversationId);
+          dispatch({
+            type: 'UPSERT_PROJECT',
+            payload: {
+              ...owner,
+              conversation_ids: owner.conversation_ids.filter((c) => c !== conversationId),
+            },
+          });
+        }
+      }
+    },
+    []
+  );
 
   // Paper library actions
   const refreshPapers = useCallback(async () => {
@@ -1186,8 +1576,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setViewingPdf = useCallback(
-    (paperId: string | null, page?: number | null) => {
-      dispatch({ type: 'SET_VIEWING_PDF', payload: { paperId, page } });
+    (paperId: string | null, page?: number | null, highlight?: PdfHighlight | null) => {
+      dispatch({ type: 'SET_VIEWING_PDF', payload: { paperId, page, highlight } });
     },
     []
   );
@@ -1672,7 +2062,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshStats();
     refreshPapers();
     refreshConversations();
-  }, [refreshHealth, refreshStats, refreshPapers, refreshConversations]);
+    refreshProjects();
+  }, [refreshHealth, refreshStats, refreshPapers, refreshConversations, refreshProjects]);
 
   const value: AppContextValue = {
     state,
@@ -1693,6 +2084,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deletePaper: deletePaperAction,
     updatePaper: updatePaperAction,
     setViewingPdf,
+    // Projects
+    refreshProjects,
+    setActiveProject,
+    setConversationProject,
     // Batch upload
     startBatchUpload,
     cancelUploadTask: cancelUploadTaskAction,
