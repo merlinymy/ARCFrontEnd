@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { WRITING_PAGE_ENABLED } from '../featureFlags';
+import { PalettePicker } from './PalettePicker';
 import { useAuth } from '../context/AuthContext';
 
 export function Header() {
@@ -80,6 +81,10 @@ export function Header() {
           <Upload className="w-5 h-5 lg:hidden xl:block" />
           <span className="hidden lg:inline">Upload</span>
         </button>
+
+        {/* Palette sits beside light/dark, not inside it: one is about the
+            room you are in, the other about what is easy to read for an hour. */}
+        <PalettePicker />
 
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

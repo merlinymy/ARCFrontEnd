@@ -164,20 +164,14 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
+// Only what the chat panel actually sets. Everything else is left out of the
+// body on purpose, so the backend's own defaults apply (retrieval sizing,
+// HyDE, citation check, general knowledge, query type, length).
 export interface QueryRequestOptions {
-  topK?: number;
   effort?: string;
   paperIds?: string[];
-  maxChunksPerPaper?: number | 'auto';
   conversationId?: string;
-  queryType?: string;
-  enableHyde?: boolean;
-  enableExpansion?: boolean;
-  /** Now means "run entailment" (null = server default). */
-  enableCitationCheck?: boolean;
   mode?: AnswerMode;
-  responseMode?: 'concise' | 'detailed';
-  enableGeneralKnowledge?: boolean;
   enableWebSearch?: boolean;
   enablePdfUpload?: boolean;
   /** false = this turn does not see the profile. */
@@ -190,18 +184,10 @@ export interface QueryRequestOptions {
 function buildQueryBody(question: string, options?: QueryRequestOptions) {
   return {
     question,
-    top_k: options?.topK ?? 10,
     effort: options?.effort ?? 'high',
     paper_ids: options?.paperIds?.length ? options.paperIds : null,
-    max_chunks_per_paper: options?.maxChunksPerPaper === 'auto' ? null : options?.maxChunksPerPaper,
     conversation_id: options?.conversationId ?? null,
-    query_type: options?.queryType === 'auto' ? null : options?.queryType ?? null,
-    enable_hyde: options?.enableHyde ?? null,
-    enable_expansion: options?.enableExpansion ?? null,
-    enable_citation_check: options?.enableCitationCheck ?? null,
     mode: options?.mode ?? 'ask',
-    response_mode: options?.responseMode ?? 'detailed',
-    enable_general_knowledge: options?.enableGeneralKnowledge ?? true,
     enable_web_search: options?.enableWebSearch ?? false,
     enable_pdf_upload: options?.enablePdfUpload ?? false,
     use_profile: options?.useProfile ?? true,
@@ -333,8 +319,6 @@ export async function queryPapersStream(
   // Log the request body for debugging
   console.log('[API] queryPapersStream request body:', {
     mode: requestBody.mode,
-    response_mode: requestBody.response_mode,
-    enable_general_knowledge: requestBody.enable_general_knowledge,
     enable_web_search: requestBody.enable_web_search,
     use_profile: requestBody.use_profile,
     project_id: requestBody.project_id,

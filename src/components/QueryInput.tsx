@@ -3,12 +3,8 @@ import {
   Send,
   ChevronDown,
   ChevronUp,
-  Sparkles,
-  Zap,
-  Shield,
   Loader2,
   Trash2,
-  Globe,
   Search,
   Square,
   UserRound,
@@ -20,25 +16,8 @@ import {
   ANSWER_MODE_LABELS,
   ANSWER_MODE_DESCRIPTIONS,
 } from '../types';
-import type { AnswerMode, EffortLevel, QueryType, ResponseMode } from '../types';
+import type { AnswerMode, EffortLevel } from '../types';
 
-const QUERY_TYPES: { value: QueryType | 'auto'; label: string }[] = [
-  { value: 'auto', label: 'Auto-detect (Recommended)' },
-  { value: 'factual', label: 'Factual' },
-  { value: 'framing', label: 'Framing' },
-  { value: 'methods', label: 'Methods' },
-  { value: 'summary', label: 'Summary' },
-  { value: 'comparative', label: 'Comparative' },
-  { value: 'novelty', label: 'Novelty' },
-  { value: 'limitations', label: 'Limitations' },
-  { value: 'general', label: 'General' },
-];
-
-const TOP_K_OPTIONS = [5, 10, 15, 20, 30, 50];
-const RESPONSE_MODE_OPTIONS: { value: ResponseMode; label: string }[] = [
-  { value: 'concise', label: 'Concise' },
-  { value: 'detailed', label: 'Detailed' },
-];
 const EFFORT_OPTIONS: { value: EffortLevel; label: string }[] = [
   { value: 'low', label: 'Low (fastest)' },
   { value: 'medium', label: 'Medium' },
@@ -221,62 +200,18 @@ export function QueryInput() {
               )}
             </div>
 
-            {/* Query Type - SECOND */}
-            <div className="mb-4">
-              <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Query Type
-                <InfoTooltip content="Which chunk types the retriever searches. Auto-detect picks a strategy from your question. This only affects retrieval - use Mode to change how the answer is written." />
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {QUERY_TYPES.map(({ value, label }) => (
-                  <button
-                    key={value}
-                    onClick={() =>
-                      dispatch({ type: 'SET_QUERY_OPTIONS', payload: { queryType: value } })
-                    }
-                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                      queryOptions.queryType === value
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:border-blue-400'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Parameters */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              <div>
-                <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Results (Top-K)
-                  <InfoTooltip content="Number of source chunks to include in the final response after reranking. Controls how many sources are cited. Recommended: 10-15 for focused answers, 20-30 for comprehensive coverage." />
-                </label>
-                <select
-                  value={queryOptions.topK}
-                  onChange={(e) =>
-                    dispatch({
-                      type: 'SET_QUERY_OPTIONS',
-                      payload: { topK: parseInt(e.target.value) },
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            {/* Answer depth and web search */}
+            <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
+              <div className="w-full sm:w-64">
+                <label
+                  htmlFor="answer-depth"
+                  className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
                 >
-                  {TOP_K_OPTIONS.map((k) => (
-                    <option key={k} value={k}>
-                      {k}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Answer Depth
                   <InfoTooltip content="How much care the model spends on the answer. Low is fastest and cheapest, good for simple lookups. High is the recommended balance. Extra high and Max reason longer and read the sources more carefully, at higher latency and cost. This is a depth setting, not a creativity setting." />
                 </label>
                 <select
+                  id="answer-depth"
                   value={queryOptions.effort}
                   onChange={(e) =>
                     dispatch({
@@ -294,175 +229,23 @@ export function QueryInput() {
                 </select>
               </div>
 
-              <div>
-                <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Answer Length
-                  <InfoTooltip content="How much room the answer may take. Concise keeps it to the answer and its evidence. Detailed allows mechanism and conditions. Neither one brings back section headings or report structure - and neither drops a number to save space." />
+              <div className="flex items-center gap-2 pb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={queryOptions.enableWebSearch}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'SET_QUERY_OPTIONS',
+                        payload: { enableWebSearch: e.target.checked },
+                      })
+                    }
+                    className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
+                  />
+                  <Search className="w-4 h-4 text-blue-500" aria-hidden="true" />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Web Search</span>
                 </label>
-                <select
-                  value={queryOptions.responseMode}
-                  onChange={(e) =>
-                    dispatch({
-                      type: 'SET_QUERY_OPTIONS',
-                      payload: { responseMode: e.target.value as ResponseMode },
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {RESPONSE_MODE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Chunks/Paper
-                  <InfoTooltip content="Maximum chunks per paper in results. Auto: System decides based on context (more for single-paper queries). Low (3-5): Better diversity across papers, faster responses. High (15-25): Deeper analysis of each paper, more comprehensive but may include redundant info." />
-                </label>
-                <select
-                  value={queryOptions.maxChunksPerPaper}
-                  onChange={(e) =>
-                    dispatch({
-                      type: 'SET_QUERY_OPTIONS',
-                      payload: { maxChunksPerPaper: e.target.value === 'auto' ? 'auto' : parseInt(e.target.value) },
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="auto">Auto</option>
-                  <option value="3">3 (Fast, diverse)</option>
-                  <option value="5">5</option>
-                  <option value="10">10</option>
-                  <option value="15">15</option>
-                  <option value="20">20</option>
-                  <option value="25">25 (Deep analysis)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Feature toggles */}
-            <div>
-              <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Features
-                <InfoTooltip content="Toggle advanced RAG pipeline features to customize how your query is processed." />
-              </label>
-              <div className="flex flex-wrap gap-4">
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={queryOptions.enableHyde}
-                      onChange={(e) =>
-                        dispatch({
-                          type: 'SET_QUERY_OPTIONS',
-                          payload: { enableHyde: e.target.checked },
-                        })
-                      }
-                      className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
-                    />
-                    <Sparkles className="w-4 h-4 text-purple-500" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">HyDE</span>
-                  </label>
-                  <InfoTooltip content="Hypothetical Document Embedding: Generates a hypothetical answer first, then uses it to find similar real content. Improves retrieval for complex or abstract queries." />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={queryOptions.enableExpansion}
-                      onChange={(e) =>
-                        dispatch({
-                          type: 'SET_QUERY_OPTIONS',
-                          payload: { enableExpansion: e.target.checked },
-                        })
-                      }
-                      className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
-                    />
-                    <Zap className="w-4 h-4 text-amber-500" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Query Expansion</span>
-                  </label>
-                  <InfoTooltip content="Expands your query with synonyms and related terms to improve recall. Helps find relevant documents that use different terminology." />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={queryOptions.enableCitationCheck}
-                      onChange={(e) =>
-                        dispatch({
-                          type: 'SET_QUERY_OPTIONS',
-                          payload: { enableCitationCheck: e.target.checked },
-                        })
-                      }
-                      className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
-                    />
-                    <Shield className="w-4 h-4 text-green-500" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Citation Check</span>
-                  </label>
-                  <InfoTooltip content="After the answer is shown, compares each cited claim with the quote it cites and labels it Supported, Partially supported or Unsupported. It runs in the background and never delays the answer." />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={queryOptions.enableGeneralKnowledge}
-                      onChange={(e) => {
-                        const enabled = e.target.checked;
-                        // If turning OFF general knowledge, also turn OFF web search
-                        if (!enabled) {
-                          dispatch({
-                            type: 'SET_QUERY_OPTIONS',
-                            payload: { enableGeneralKnowledge: false, enableWebSearch: false },
-                          });
-                        } else {
-                          dispatch({
-                            type: 'SET_QUERY_OPTIONS',
-                            payload: { enableGeneralKnowledge: true },
-                          });
-                        }
-                      }}
-                      className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
-                    />
-                    <Globe className="w-4 h-4 text-cyan-500" />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">General Knowledge</span>
-                  </label>
-                  <InfoTooltip content="Allow the AI to supplement answers with general scientific knowledge beyond your uploaded papers. Responses will clearly separate RAG-sourced content from general knowledge." />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={queryOptions.enableWebSearch}
-                      disabled={!queryOptions.enableGeneralKnowledge}
-                      onChange={(e) => {
-                        const enabled = e.target.checked;
-                        // If turning ON web search, also ensure general knowledge is ON
-                        if (enabled) {
-                          dispatch({
-                            type: 'SET_QUERY_OPTIONS',
-                            payload: { enableWebSearch: true, enableGeneralKnowledge: true },
-                          });
-                        } else {
-                          dispatch({
-                            type: 'SET_QUERY_OPTIONS',
-                            payload: { enableWebSearch: false },
-                          });
-                        }
-                      }}
-                      className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                    />
-                    <Search className={`w-4 h-4 ${queryOptions.enableGeneralKnowledge ? 'text-blue-500' : 'text-gray-400'}`} />
-                    <span className={`text-sm ${queryOptions.enableGeneralKnowledge ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>Web Search</span>
-                  </label>
-                  <InfoTooltip content="Allow Claude to search the web for additional context. Requires General Knowledge to be enabled. Web results will appear in the General Knowledge section." />
-                </div>
+                <InfoTooltip content="Allow Claude to search the web for additional context. Web results will appear in the General Knowledge section." />
               </div>
             </div>
           </div>

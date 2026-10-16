@@ -13,7 +13,6 @@ import type {
   Message,
   QueryOptions,
   QueryType,
-  EffortLevel,
   HealthStatus,
   StatsResponse,
   PipelineStepInfo,
@@ -32,7 +31,7 @@ import type {
   EntailmentReport,
   AnswerStatus,
 } from '../types';
-import { DEFAULT_QUERY_OPTIONS, PIPELINE_STEPS } from '../types';
+import { DEFAULT_QUERY_OPTIONS, PIPELINE_STEPS, isEffortLevel } from '../types';
 import { api, queryPapersStream, getUserPreferences, updateUserPreferences, type StreamEvent } from '../services/api';
 import { messageFromStored } from '../lib/messages';
 
@@ -848,21 +847,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         dispatch({
           type: 'LOAD_QUERY_OPTIONS',
           payload: {
-            queryType: (prefs.query_type as QueryType | 'auto') || 'auto',
-            topK: prefs.top_k,
-            effort: (prefs.effort as EffortLevel) || 'high',
+            // Only the stored values for the controls the panel still has are
+            // read. The rest stay on the server untouched.
+            effort: isEffortLevel(prefs.effort) ? prefs.effort : DEFAULT_QUERY_OPTIONS.effort,
             // Stance is per-conversation, not a stored user preference, so it
             // resets to the default here and is restored by selectConversation.
             mode: DEFAULT_QUERY_OPTIONS.mode,
             paperFilter: [],
             sectionFilter: null,
-            maxChunksPerPaper: prefs.max_chunks_per_paper ?? 'auto',
-            responseMode: prefs.response_mode,
-            enableHyde: prefs.enable_hyde,
-            enableExpansion: prefs.enable_expansion,
-            enableCitationCheck: prefs.enable_citation_check,
-            enableGeneralKnowledge: prefs.enable_general_knowledge,
-            enableWebSearch: prefs.enable_web_search,
+            enableWebSearch: prefs.enable_web_search ?? DEFAULT_QUERY_OPTIONS.enableWebSearch,
             enablePdfUpload: prefs.enable_pdf_upload ?? false,
             // Per message, not a stored preference.
             useProfile: DEFAULT_QUERY_OPTIONS.useProfile,
@@ -881,15 +874,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const savePreferences = async () => {
       try {
         await updateUserPreferences({
-          query_type: state.queryOptions.queryType,
-          top_k: state.queryOptions.topK,
+          // A partial update: fields left out are not touched on the server,
+          // so values stored for controls that no longer exist stay as they were.
           effort: state.queryOptions.effort,
-          max_chunks_per_paper: state.queryOptions.maxChunksPerPaper === 'auto' ? null : state.queryOptions.maxChunksPerPaper,
-          response_mode: state.queryOptions.responseMode,
-          enable_hyde: state.queryOptions.enableHyde,
-          enable_expansion: state.queryOptions.enableExpansion,
-          enable_citation_check: state.queryOptions.enableCitationCheck,
-          enable_general_knowledge: state.queryOptions.enableGeneralKnowledge,
           enable_web_search: state.queryOptions.enableWebSearch,
           enable_pdf_upload: state.queryOptions.enablePdfUpload,
         });
@@ -1062,10 +1049,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Log query options being sent to API
       console.log('[Query] Submitting with options:', {
         mode: state.queryOptions.mode,
-        responseMode: state.queryOptions.responseMode,
-        enableGeneralKnowledge: state.queryOptions.enableGeneralKnowledge,
         enableWebSearch: state.queryOptions.enableWebSearch,
-        queryType: state.queryOptions.queryType,
         useProfile: state.queryOptions.useProfile,
         projectId,
       });
@@ -1378,18 +1362,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         },
         {
-          topK: state.queryOptions.topK,
           effort: state.queryOptions.effort,
           paperIds: state.queryOptions.paperFilter,
-          maxChunksPerPaper: state.queryOptions.maxChunksPerPaper,
           conversationId: activeConversationId,
-          queryType: state.queryOptions.queryType,
-          enableHyde: state.queryOptions.enableHyde,
-          enableExpansion: state.queryOptions.enableExpansion,
-          enableCitationCheck: state.queryOptions.enableCitationCheck,
           mode: state.queryOptions.mode,
-          responseMode: state.queryOptions.responseMode,
-          enableGeneralKnowledge: state.queryOptions.enableGeneralKnowledge,
           enableWebSearch: state.queryOptions.enableWebSearch,
           enablePdfUpload: state.queryOptions.enablePdfUpload,
           useProfile: state.queryOptions.useProfile,

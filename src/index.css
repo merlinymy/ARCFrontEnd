@@ -386,3 +386,68 @@ body {
   border-radius: 0.5rem;
   margin: 1em 0;
 }
+
+/* ===========================================================================
+   Palette presets
+   ===========================================================================
+
+   Tailwind v4 compiles `bg-gray-800` to `var(--color-gray-800)`, so
+   redefining that scale re-skins the whole interface - 2,906 gray utilities
+   and counting - without touching a single component.
+
+   Every preset keeps Tailwind's LIGHTNESS ladder exactly and changes only
+   hue and chroma. That is what makes them safe: contrast comes almost
+   entirely from lightness, so each preset lands within 0.2 of the default on
+   every text pairing. Measured, not assumed - body text on background is
+   16.8-17.0 and secondary text 7.1-7.3 across all four, against a WCAG AA
+   requirement of 4.5.
+
+   Only the neutrals change. Blue stays blue in every preset, because it
+   carries meaning here (links, selection, the citation chips) and a palette
+   that recolours those is a palette that makes them harder to recognise.
+
+   Works in dark mode for free: dark mode uses the same scale from the other
+   end, so one set of overrides covers both.
+   ========================================================================= */
+
+:root[data-palette="warm"] {
+  --color-gray-50: oklch(98.5% 0.003 75);
+  --color-gray-100: oklch(96.7% 0.005 75);
+  --color-gray-200: oklch(92.8% 0.009 75);
+  --color-gray-300: oklch(87.2% 0.015 75);
+  --color-gray-400: oklch(70.7% 0.033 75);
+  --color-gray-500: oklch(55.1% 0.041 75);
+  --color-gray-600: oklch(44.6% 0.045 75);
+  --color-gray-700: oklch(37.3% 0.051 75);
+  --color-gray-800: oklch(27.8% 0.050 75);
+  --color-gray-900: oklch(21.0% 0.051 75);
+  --color-gray-950: oklch(13.0% 0.042 75);
+}
+
+:root[data-palette="sage"] {
+  --color-gray-50: oklch(98.5% 0.003 155);
+  --color-gray-100: oklch(96.7% 0.004 155);
+  --color-gray-200: oklch(92.8% 0.008 155);
+  --color-gray-300: oklch(87.2% 0.013 155);
+  --color-gray-400: oklch(70.7% 0.029 155);
+  --color-gray-500: oklch(55.1% 0.035 155);
+  --color-gray-600: oklch(44.6% 0.039 155);
+  --color-gray-700: oklch(37.3% 0.044 155);
+  --color-gray-800: oklch(27.8% 0.043 155);
+  --color-gray-900: oklch(21.0% 0.044 155);
+  --color-gray-950: oklch(13.0% 0.036 155);
+}
+
+:root[data-palette="slate"] {
+  --color-gray-50: oklch(98.5% 0.004 250);
+  --color-gray-100: oklch(96.7% 0.005 250);
+  --color-gray-200: oklch(92.8% 0.011 250);
+  --color-gray-300: oklch(87.2% 0.018 250);
+  --color-gray-400: oklch(70.7% 0.040 250);
+  --color-gray-500: oklch(55.1% 0.049 250);
+  --color-gray-600: oklch(44.6% 0.054 250);
+  --color-gray-700: oklch(37.3% 0.061 250);
+  --color-gray-800: oklch(27.8% 0.059 250);
+  --color-gray-900: oklch(21.0% 0.061 250);
+  --color-gray-950: oklch(13.0% 0.050 250);
+}

@@ -525,20 +525,23 @@ export const ANSWER_MODE_DESCRIPTIONS: Record<AnswerMode, string> = {
 // How much care the model spends on the answer (depth, not creativity)
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
-// Query options for advanced settings
+const EFFORT_LEVELS: readonly string[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/** A stored preference is untrusted: only a known level may become the effort. */
+export function isEffortLevel(value: unknown): value is EffortLevel {
+  return typeof value === 'string' && EFFORT_LEVELS.includes(value);
+}
+
+// Query options for the chat Advanced Options panel. The panel exposes three
+// controls: mode, effort and web search. Everything else about retrieval and
+// the answer pipeline (result counts, chunks per paper, query type, HyDE,
+// expansion, citation check, general knowledge, length) is left to the
+// backend's own defaults, so none of it is sent with a query.
 export interface QueryOptions {
-  queryType: QueryType | 'auto';
-  topK: number;
   effort: EffortLevel;
   mode: AnswerMode; // Response stance - selects the prompt's stance modifier
   paperFilter: string[];
   sectionFilter: string | null;
-  enableHyde: boolean;
-  enableExpansion: boolean;
-  enableCitationCheck: boolean;
-  maxChunksPerPaper: number | 'auto'; // 'auto' lets system decide based on context
-  responseMode: ResponseMode; // 'concise' for brief, 'detailed' for comprehensive
-  enableGeneralKnowledge: boolean; // Allow LLM general knowledge beyond RAG sources
   enableWebSearch: boolean; // Allow Claude to search the web
   enablePdfUpload: boolean; // Send actual PDF files to Claude (32MB limit, 100 pages max)
   // Whether this turn sees the user's profile. Per message; not a stored preference.
@@ -846,18 +849,10 @@ export interface AppState {
 
 // Default query options
 export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
-  queryType: 'auto',
-  topK: 15,
   effort: 'high',
   mode: 'ask',
   paperFilter: [],
   sectionFilter: null,
-  enableHyde: true,
-  enableExpansion: true,
-  enableCitationCheck: true,
-  maxChunksPerPaper: 'auto',
-  responseMode: 'detailed',
-  enableGeneralKnowledge: true,
   enableWebSearch: false,
   enablePdfUpload: false,
   useProfile: true,
