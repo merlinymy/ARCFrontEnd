@@ -10,6 +10,7 @@ import {
   Trash2,
   Globe,
   Search,
+  Square,
   UserRound,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -47,7 +48,7 @@ const EFFORT_OPTIONS: { value: EffortLevel; label: string }[] = [
 ];
 
 export function QueryInput() {
-  const { state, dispatch, submitQuery, clearConversation, setActivePage } = useApp();
+  const { state, dispatch, submitQuery, stopQuery, clearConversation, setActivePage } = useApp();
   const { currentQuery, queryOptions, isLoading, activeConversationId } = state;
   const isDeepMode =
     queryOptions.mode === 'develop' || queryOptions.mode === 'critique' || queryOptions.mode === 'draft';
@@ -99,6 +100,17 @@ export function QueryInput() {
             <span className="text-xs text-gray-400 dark:text-gray-500 mr-2 hidden sm:inline">
               {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter
             </span>
+            {isLoading && (
+              <button
+                type="button"
+                onClick={stopQuery}
+                aria-label="Stop"
+                title="Stop. What has been written so far stays."
+                className="p-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                <Square className="w-5 h-5" aria-hidden="true" />
+              </button>
+            )}
             <button
               onClick={handleSubmit}
               disabled={!currentQuery.trim() || isLoading}

@@ -315,6 +315,12 @@ export interface Message {
     citations?: Citation[];
     claims?: Claim[];
     answerStatus?: AnswerStatus;
+    /**
+     * Set when the stream ended before the server's `complete` event: the text
+     * is whatever had arrived. 'dropped' = the connection closed under us;
+     * 'stopped' = the user pressed Stop. Never set on a server-final answer.
+     */
+    cutOff?: 'dropped' | 'stopped';
     servedModel?: string | null;
     /** Model that declined before a fallback took over, when the stream said so. */
     fallbackFrom?: string | null;

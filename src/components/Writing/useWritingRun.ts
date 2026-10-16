@@ -199,6 +199,16 @@ export function useWritingRun(onSaved?: () => void) {
 
     try {
       await streamWriting(task, body, handle, controller.signal);
+      // The stream closed cleanly but never said `complete` (a tunnel or proxy
+      // cut it): say so, or the page would just go quiet with no result.
+      if (!answered && !controller.signal.aborted) {
+        patch(() => ({
+          running: false,
+          run: null,
+          thinking: '',
+          error: 'The connection closed before the run finished. Run it again.',
+        }));
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         patch(() => ({ running: false, run: null, thinking: '', stopped: !answered }));

@@ -502,6 +502,19 @@ function AnswerCard({ queryMessage, responseMessage }: ResponseCardProps) {
             />
           )}
 
+          {/* The stream ended before the server finished: what is shown is partial. */}
+          {metadata?.cutOff && !isNotice && (
+            <p
+              role="note"
+              className="mt-3 flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+              {metadata.cutOff === 'stopped'
+                ? 'You stopped this answer. It is incomplete, and may not be kept when you reopen the conversation.'
+                : 'The connection closed before this answer finished. It is incomplete, and may not be kept when you reopen the conversation. Ask again to get the whole answer.'}
+            </p>
+          )}
+
           {/* Pipeline Warnings */}
           {warnings.length > 0 && (
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">

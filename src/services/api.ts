@@ -325,7 +325,8 @@ export async function postEventStream<E>(
 export async function queryPapersStream(
   question: string,
   onProgress: (event: StreamEvent) => void,
-  options?: QueryRequestOptions
+  options?: QueryRequestOptions,
+  signal?: AbortSignal
 ): Promise<void> {
   const requestBody = buildQueryBody(question, options);
 
@@ -339,7 +340,7 @@ export async function queryPapersStream(
     project_id: requestBody.project_id,
   });
 
-  await postEventStream<StreamEvent>('/query/stream', requestBody, onProgress);
+  await postEventStream<StreamEvent>('/query/stream', requestBody, onProgress, signal);
 }
 
 // Get health status

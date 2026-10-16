@@ -151,6 +151,8 @@ type Action =
   | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; message: Message } }
   // Replace the placeholder (matched by its local id) with the finished message.
   | { type: 'FINALIZE_MESSAGE'; payload: { conversationId: string; localId: string; message: Message } }
+  // The stream ended without `complete`: keep what arrived and mark it as cut off.
+  | { type: 'CUT_OFF_MESSAGE'; payload: { conversationId: string; localId: string; reason: 'dropped' | 'stopped' } }
   // The entailment pass finished. Matched by local id, or by the stored id (a reopened thread).
   | { type: 'SET_MESSAGE_ENTAILMENT'; payload: { conversationId: string; localId: string; storedId: number | null; entailment: EntailmentReport } }
   | { type: 'RUN_EVENT'; payload: RunEvent }
@@ -294,13 +296,29 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'CLEAR_CONVERSATIONS':
       return { ...state, conversations: [], activeConversationId: null };
 
-    case 'LOAD_CONVERSATIONS':
+    case 'LOAD_CONVERSATIONS': {
+      // Merge, never replace: this also runs from the always-mounted Writing page
+      // while the user is mid-thread. The server list decides which conversations
+      // exist and their titles and times, but it carries no messages, so loaded
+      // messages (and a thread still streaming) stay.
+      const local = new Map(state.conversations.map((c) => [c.id, c]));
+      const fromServer = action.payload.map((c) => {
+        const mine = local.get(c.id);
+        return mine ? { ...c, messages: mine.messages, mode: mine.mode ?? c.mode } : c;
+      });
+      const serverIds = new Set(action.payload.map((c) => c.id));
+      // Created here, not on the server list yet (a new thread mid-stream).
+      const localOnly = state.conversations.filter((c) => !serverIds.has(c.id));
+      const conversations = [...localOnly, ...fromServer];
       return {
         ...state,
-        conversations: action.payload,
+        conversations,
         // Don't auto-select first conversation - landing page should show empty chat
-        activeConversationId: null,
+        activeConversationId: conversations.some((c) => c.id === state.activeConversationId)
+          ? state.activeConversationId
+          : null,
       };
+    }
 
     case 'SET_CONVERSATION_MESSAGES':
       return {
@@ -607,6 +625,34 @@ function appReducer(state: AppState, action: Action): AppState {
         ),
       };
 
+    case 'CUT_OFF_MESSAGE':
+      return {
+        ...state,
+        conversations: state.conversations.map((conv) =>
+          conv.id === action.payload.conversationId
+            ? {
+                ...conv,
+                messages: conv.messages.map((msg) => {
+                  if (msg.id !== action.payload.localId) return msg;
+                  // Partial text is real: keep it and say it is partial.
+                  if (msg.content.trim()) {
+                    return { ...msg, metadata: { ...msg.metadata, cutOff: action.payload.reason } };
+                  }
+                  // Nothing arrived; an empty answer card would be a blank box.
+                  return {
+                    ...msg,
+                    content:
+                      action.payload.reason === 'stopped'
+                        ? 'You stopped this run before an answer was written.'
+                        : 'The connection closed before an answer arrived.',
+                    metadata: { ...msg.metadata, answerStatus: 'incomplete' as AnswerStatus },
+                  };
+                }),
+              }
+            : conv
+        ),
+      };
+
     case 'SET_MESSAGE_ENTAILMENT':
       return {
         ...state,
@@ -721,6 +767,8 @@ interface AppContextValue {
   setActivePage: (page: AppPage) => void;
   createNewConversation: () => string;
   submitQuery: (query: string) => Promise<void>;
+  /** Abort the query in flight. The partial answer stays, marked as stopped. */
+  stopQuery: () => void;
   clearConversation: () => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
   refreshHealth: () => Promise<void>;
@@ -766,6 +814,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Latest projects, for selectConversation without re-creating it on every change.
   const projectsRef = useRef<Project[]>([]);
   projectsRef.current = state.projects;
+  // Aborts the query stream in flight (the Stop button, and unmount: logout
+  // unmounts this provider and a minutes-long run must not outlive the session).
+  const queryAbortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      queryAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     writeActiveProject(state.activeProjectId);
@@ -868,6 +927,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const submitQuery = useCallback(async (query: string) => {
     if (!query.trim()) return;
+
+    // Created before the first await so Stop also works while the new
+    // conversation is still being saved.
+    const controller = new AbortController();
+    queryAbortRef.current = controller;
 
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'RUN_EVENT', payload: { kind: 'start' } });
@@ -1330,9 +1394,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
           enablePdfUpload: state.queryOptions.enablePdfUpload,
           useProfile: state.queryOptions.useProfile,
           projectId,
-        }
+        },
+        controller.signal
       );
+
+      // The stream closed cleanly but the server never said `complete` (a
+      // tunnel or proxy cut it). Without this the half answer would sit in the
+      // "streaming" state forever, with no footer and no error.
+      if (!answered) {
+        dispatch({ type: 'STOP_STREAMING' });
+        dispatch({
+          type: 'CUT_OFF_MESSAGE',
+          payload: {
+            conversationId: activeConversationId,
+            localId: responseMessageId,
+            reason: controller.signal.aborted ? 'stopped' : 'dropped',
+          },
+        });
+      }
     } catch (error) {
+      if (controller.signal.aborted) {
+        // Stop was pressed (or the provider unmounted): a clean stop, not a failure.
+        if (!answered) {
+          dispatch({ type: 'STOP_STREAMING' });
+          dispatch({
+            type: 'CUT_OFF_MESSAGE',
+            payload: { conversationId: activeConversationId, localId: responseMessageId, reason: 'stopped' },
+          });
+        }
+        return;
+      }
       console.error('Query failed:', error);
       const text = error instanceof Error ? error.message : 'Failed to process query';
       dispatch({ type: 'STOP_STREAMING' });
@@ -1368,24 +1459,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
           latency_ms: 0,
         });
       }
-      // Refresh stats to update query count and cache hit rate
-      try {
-        const stats = await api.getStats();
-        dispatch({ type: 'SET_STATS', payload: stats });
-      } catch (error) {
-        console.error('Failed to refresh stats:', error);
-      }
-      // A turn asked under a project links its conversation to it server side.
-      if (projectId) {
+      if (queryAbortRef.current === controller) queryAbortRef.current = null;
+      // Unmounted (logout): nothing left to refresh, and the token is gone.
+      if (mountedRef.current) {
+        // Refresh stats to update query count and cache hit rate
         try {
-          const { projects } = await api.getProjects();
-          dispatch({ type: 'SET_PROJECTS', payload: projects });
+          const stats = await api.getStats();
+          dispatch({ type: 'SET_STATS', payload: stats });
         } catch (error) {
-          console.error('Failed to refresh projects:', error);
+          console.error('Failed to refresh stats:', error);
+        }
+        // A turn asked under a project links its conversation to it server side.
+        if (projectId) {
+          try {
+            const { projects } = await api.getProjects();
+            dispatch({ type: 'SET_PROJECTS', payload: projects });
+          } catch (error) {
+            console.error('Failed to refresh projects:', error);
+          }
         }
       }
     }
   }, [state.activeConversationId, state.conversations, state.queryOptions, state.activeProjectId]);
+
+  const stopQuery = useCallback(() => {
+    queryAbortRef.current?.abort();
+  }, []);
 
   // Since W3 the model's view of a thread is rebuilt from the stored messages
   // on every turn, and POST /conversation/clear is a no-op: the only thing that
@@ -2073,6 +2172,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setActivePage,
     createNewConversation,
     submitQuery,
+    stopQuery,
     clearConversation,
     deleteConversation,
     refreshHealth,

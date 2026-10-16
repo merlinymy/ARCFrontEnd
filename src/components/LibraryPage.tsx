@@ -56,6 +56,13 @@ export function LibraryPage() {
   // Sentinel ref for infinite scroll
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  // Where the next browse page starts, and which browse request is the latest.
+  // Held in refs so `loadBrowsePapers` keeps one identity as pages arrive:
+  // were it to change per page, the effect below would re-run with reset=true
+  // and snap the list back to the first 50.
+  const browseOffsetRef = useRef(0);
+  const browseRequestRef = useRef(0);
+
 
   const togglePaperSelection = useCallback((paperId: string) => {
     setSelectedPaperIds(prev => {
@@ -127,11 +134,17 @@ export function LibraryPage() {
 
   // Load papers in browse mode (no filters)
   const loadBrowsePapers = useCallback(async (sort: SortField, order: SortOrder, reset: boolean = true) => {
+    const requestId = ++browseRequestRef.current;
     setIsLoadingBrowse(true);
     try {
       const backendSortField = mapSortField(sort);
-      const offset = reset ? 0 : browsePapers.length;
+      const offset = reset ? 0 : browseOffsetRef.current;
       const response = await getPapers(offset, 50, undefined, backendSortField, order);
+
+      // A newer load started meanwhile (a sort change mid-scroll): this page is
+      // for the old order and must not be appended to the new list.
+      if (requestId !== browseRequestRef.current) return;
+      browseOffsetRef.current = offset + response.papers.length;
 
       if (reset) {
         setBrowsePapers(response.papers);
@@ -143,9 +156,9 @@ export function LibraryPage() {
     } catch (err) {
       console.error('Failed to load papers:', err);
     } finally {
-      setIsLoadingBrowse(false);
+      if (requestId === browseRequestRef.current) setIsLoadingBrowse(false);
     }
-  }, [browsePapers.length]);
+  }, []);
 
   // Text filter with backend (for title/author/filename)
   const performTextFilter = useCallback(async (filter: string, sort: SortField, order: SortOrder) => {
@@ -213,13 +226,25 @@ export function LibraryPage() {
     }
   }, [searchQuery, semanticResults.length, isLoadingMoreSearchResults, hasMoreSearchResults]);
 
-  // Load browse papers when sort changes (and no filters active)
-  // Also re-fetch when global papers change (e.g. after upload completes)
+  // An upload finishing is the one reason to refetch page 1 unprompted. Upload
+  // progress also rewrites the global `papers`, so that array must not be the
+  // trigger; count completions, and only an increase counts (clearing the
+  // upload panel drops the count and must not reload the list).
+  const completedUploads =
+    state.activeBatchUpload?.tasks.filter((t) => t.status === 'complete').length ?? 0;
+  const [uploadTick, setUploadTick] = useState(0);
+  const seenCompletedRef = useRef(completedUploads);
+  useEffect(() => {
+    if (completedUploads > seenCompletedRef.current) setUploadTick((t) => t + 1);
+    seenCompletedRef.current = completedUploads;
+  }, [completedUploads]);
+
+  // Load browse papers when sort changes (and no filters active), and after an upload completes
   useEffect(() => {
     if (!textFilter.trim() && !searchQuery.trim()) {
       loadBrowsePapers(sortField, sortOrder, true);
     }
-  }, [sortField, sortOrder, textFilter, searchQuery, loadBrowsePapers, papers]);
+  }, [sortField, sortOrder, textFilter, searchQuery, loadBrowsePapers, uploadTick]);
 
   // Infinite scroll with IntersectionObserver
   useEffect(() => {
