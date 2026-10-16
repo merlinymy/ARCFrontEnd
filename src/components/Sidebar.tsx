@@ -11,6 +11,7 @@ import {
   Waypoints,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { WRITING_PAGE_ENABLED } from '../featureFlags';
 import { MinimizedUploadWidget } from './MinimizedUploadWidget';
 import { Tooltip } from './Tooltip';
 import type { Conversation } from '../types';
@@ -105,7 +106,9 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Writing */}
+        {/* Writing — hidden: drafting happens in the conversation now and
+            comes back as an artifact. Flag in src/featureFlags.ts. */}
+        {WRITING_PAGE_ENABLED && (
         <Tooltip content="Writing" position="right">
           <button
             onClick={() => setActivePage('writing')}
@@ -119,6 +122,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             <PenLine className="w-5 h-5" />
           </button>
         </Tooltip>
+        )}
 
         {/* Bibliography */}
         <Tooltip content="Bibliography" position="right">
@@ -259,7 +263,8 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
         )}
       </div>
 
-      {/* Writing Section */}
+      {/* Writing Section — hidden with the icon above; see featureFlags.ts. */}
+      {WRITING_PAGE_ENABLED && (
       <div className="shrink-0">
         <button
           onClick={() => {
@@ -281,6 +286,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
           <ChevronRight className="w-4 h-4 text-gray-400" />
         </button>
       </div>
+      )}
 
       {/* Bibliography Section */}
       <div className="shrink-0">

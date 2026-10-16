@@ -13,6 +13,7 @@ import {
   PenLine,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { WRITING_PAGE_ENABLED } from '../featureFlags';
 import { useAuth } from '../context/AuthContext';
 
 export function Header() {
@@ -24,7 +25,11 @@ export function Header() {
   const navItems = [
     { page: 'library' as const, icon: FileText, label: 'Library' },
     { page: 'projects' as const, icon: FolderKanban, label: 'Projects' },
-    { page: 'writing' as const, icon: PenLine, label: 'Writing' },
+    // Writing folded into the conversation: ask for a draft in chat and it
+    // comes back as an artifact. The page still exists behind the flag.
+    ...(WRITING_PAGE_ENABLED
+      ? [{ page: 'writing' as const, icon: PenLine, label: 'Writing' }]
+      : []),
     { page: 'profile' as const, icon: UserRound, label: 'Profile' },
     { page: 'bibliography' as const, icon: BookMarked, label: 'Bibliography' },
     { page: 'prompts' as const, icon: Settings, label: 'Prompts' },
