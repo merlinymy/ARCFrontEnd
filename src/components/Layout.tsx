@@ -12,11 +12,11 @@ export function Layout({ children }: LayoutProps) {
   const { sidebarOpen } = state;
 
   return (
-    /* overflow-hidden is load-bearing: this shell is exactly one viewport
-       tall and everything inside scrolls in its own pane. Without it a child
-       taller than the viewport - a long conversation list in the sidebar -
-       overflows visibly and gives the document its own scrollbar, so you get
-       two: an inner one for the chat and an outer one dragging the whole app. */
+    /* overflow-hidden states the invariant this shell already assumed: one
+       viewport tall, everything inside scrolls in its own pane. Kept as
+       defence in depth, but note it is NOT what fixed the two-scrollbar bug
+       - see the comment on <main>. An absolutely positioned descendant of a
+       static ancestor ignores this entirely. */
     <div className="h-screen overflow-hidden flex bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       {/* Mobile overlay backdrop */}
       {sidebarOpen && (
@@ -27,13 +27,9 @@ export function Layout({ children }: LayoutProps) {
       )}
 
       {/* Sidebar - full height, transforms based on state */}
-      {/* h-full so the aside's own `h-full` has something to resolve against.
-          Without it the aside falls back to its content height, its inner
-          `flex-1 overflow-y-auto` conversation list never gets a bound to
-          scroll within, and the sidebar grows past the viewport instead. */}
       <div
         className={`
-          fixed inset-y-0 left-0 z-50 md:relative md:z-0 h-full
+          fixed inset-y-0 left-0 z-50 md:relative md:z-0
           transition-all duration-200 ease-in-out
           ${sidebarOpen ? 'w-64' : 'w-0 md:w-16'}
         `}
@@ -44,7 +40,18 @@ export function Layout({ children }: LayoutProps) {
       {/* Main area with header and content */}
       <div className="flex-1 flex flex-col min-w-0 h-screen">
         <Header />
-        <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* `relative` is what stops the page growing a second scrollbar.
+            Tailwind's `sr-only` is position:absolute, and every wrapper in a
+            page is position:static, so those elements' containing block was
+            the page itself. Absolute boxes are not clipped by overflow:hidden
+            on a static ancestor, so each one sat at its static position deep
+            inside the scrolled content and stretched the document down to
+            meet it - further with every answer, since each source card adds
+            more. Measured in the running app: html scrollHeight 2865 against
+            an 873 viewport, matching the last sr-only's bottom exactly; with
+            this, 873. Making main the containing block puts them inside
+            something that does clip. */}
+        <main className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
           {children}
         </main>
       </div>
