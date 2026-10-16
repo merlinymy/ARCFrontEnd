@@ -1199,6 +1199,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
               return;
             }
 
+            // Light the indicator the moment the search starts, not when the
+            // first progress message happens to arrive. Those come from the
+            // search tool and can be far apart or absent entirely, which left
+            // a long web search looking identical to a hung request - the
+            // only cue was the spinner in the composer.
+            if (stepName === 'web_search' && data?.status === 'starting') {
+              dispatch({ type: 'SET_WEB_SEARCH_PROGRESS', payload: 'Searching the web…' });
+              return;
+            }
+
             // Clear web search progress when web search completes
             if (stepName === 'web_search' && data?.status === 'complete') {
               dispatch({ type: 'SET_WEB_SEARCH_PROGRESS', payload: null });
