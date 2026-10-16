@@ -57,31 +57,55 @@ function pdfjsData(): Plugin {
   }
 }
 
+// Shared by `vite dev` and `vite preview`.
+//
+// `preview` matters for how this is actually served: the backend is on
+// localhost:8001 and the Cloudflare tunnel points at the frontend, so the
+// browser only ever talks to one origin and asks for `/api/...` relatively.
+// That means no CORS at all, and - the point - a new quick-tunnel URL on
+// every restart needs no rebuild, because no absolute backend URL is baked
+// into the bundle. Leave VITE_API_BASE_URL unset so API_BASE falls back to
+// '/api' (src/services/api.ts).
+const apiProxy = {
+  '/api': {
+    target: 'http://localhost:8001',
+    changeOrigin: true,
+    rewrite: (path: string) => path.replace(/^\/api/, ''),
+    configure: (proxy: any) => {
+      // Disable buffering for SSE stream endpoints
+      proxy.on('proxyReq', (proxyReq: any, req: any) => {
+        if (req.url && req.url.includes('/stream')) {
+          proxyReq.setHeader('Cache-Control', 'no-cache');
+          proxyReq.setHeader('Accept', 'text/event-stream');
+        }
+      });
+      proxy.on('proxyRes', (proxyRes: any, req: any) => {
+        if (req.url && req.url.includes('/stream')) {
+          proxyRes.headers['cache-control'] = 'no-cache';
+          proxyRes.headers['x-accel-buffering'] = 'no';
+        }
+      });
+    },
+  },
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss(), pdfjsData()],
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8001',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-        configure: (proxy) => {
-          // Disable buffering for SSE stream endpoints
-          proxy.on('proxyReq', (proxyReq, req) => {
-            if (req.url && req.url.includes('/stream')) {
-              proxyReq.setHeader('Cache-Control', 'no-cache');
-              proxyReq.setHeader('Accept', 'text/event-stream');
-            }
-          });
-          proxy.on('proxyRes', (proxyRes, req) => {
-            if (req.url && req.url.includes('/stream')) {
-              proxyRes.headers['cache-control'] = 'no-cache';
-              proxyRes.headers['x-accel-buffering'] = 'no';
-            }
-          });
-        },
-      },
-    },
+  server: { proxy: apiProxy },
+  preview: {
+    proxy: apiProxy,
+    // Vite refuses requests whose Host header it does not recognise, so
+    // without this every request through the tunnel comes back as a plain
+    // "Blocked request. This host is not allowed." The quick tunnel invents
+    // a new hostname on every restart, hence the leading-dot wildcard rather
+    // than a fixed name. ARC_PUBLIC_HOST adds a named tunnel's own domain.
+    //
+    // This is not the access control: that is the login on every API route.
+    // All this decides is which Host headers vite will answer at all.
+    allowedHosts: [
+      '.trycloudflare.com',
+      ...(process.env.ARC_PUBLIC_HOST ? [process.env.ARC_PUBLIC_HOST] : []),
+    ],
   },
 })
