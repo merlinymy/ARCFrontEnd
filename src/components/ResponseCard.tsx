@@ -24,6 +24,8 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AnswerBody } from './AnswerBody';
+import { ArtifactPanel } from './ArtifactPanel';
+import { splitArtifact } from '../lib/artifact';
 import { EntailmentBadge, EntailmentPending } from './EntailmentBadge';
 import { SourcesPanel } from './SourcesPanel';
 import { FigureView } from './FigureView';
@@ -427,6 +429,11 @@ function AnswerCard({ queryMessage, responseMessage }: ResponseCardProps) {
   const allSources = useMemo(() => metadata?.sources ?? [], [metadata?.sources]);
   const citations = metadata?.citations;
 
+  // Re-split on every content change rather than tracking the stream: the
+  // parser takes the whole accumulated answer, so a tag split across chunks
+  // cannot confuse it. Memoised because this runs on every streamed token.
+  const draft = useMemo(() => splitArtifact(responseMessage.content), [responseMessage.content]);
+
   // Figures from the sources the answer actually cited (all retrieved sources
   // for a pre-W3 answer, which has no notion of cited). Rendered in the thread
   // so the user can look at the actual plot without leaving the conversation --
@@ -492,14 +499,33 @@ function AnswerCard({ queryMessage, responseMessage }: ResponseCardProps) {
           {isNotice ? (
             <AnswerNotice message={responseMessage} />
           ) : (
-            <AnswerBody
-              content={responseMessage.content}
-              citations={citations}
-              claims={metadata?.claims}
-              entailment={metadata?.entailment}
-              entailmentPending={Boolean(metadata?.entailmentPending)}
-              legacySources={citations === undefined ? allSources : undefined}
-            />
+            <>
+              {/* A drafted piece is lifted into its own panel; whatever the
+                  model said *about* it stays here. No artifact in the answer
+                  means `commentary` is the whole text and this renders
+                  exactly as it always did. */}
+              {draft.commentary && (
+                <AnswerBody
+                  content={draft.commentary}
+                  citations={citations}
+                  claims={metadata?.claims}
+                  entailment={metadata?.entailment}
+                  entailmentPending={Boolean(metadata?.entailmentPending)}
+                  legacySources={citations === undefined ? allSources : undefined}
+                />
+              )}
+              {draft.artifact && (
+                <ArtifactPanel
+                  title={draft.artifact.title}
+                  content={draft.artifact.content}
+                  closed={draft.artifact.closed}
+                  citations={citations}
+                  claims={metadata?.claims}
+                  entailment={metadata?.entailment}
+                  entailmentPending={Boolean(metadata?.entailmentPending)}
+                />
+              )}
+            </>
           )}
 
           {/* The stream ended before the server finished: what is shown is partial. */}
