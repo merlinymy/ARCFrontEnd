@@ -1,4 +1,5 @@
 import { createContext, useContext, useReducer, useEffect, useCallback, type ReactNode } from 'react';
+import { setUnauthorizedHandler } from '../services/unauthorized';
 
 // API Base URL
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -92,14 +93,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (response.ok) {
           const user = await response.json();
           dispatch({ type: 'SET_USER', payload: { user, token } });
-        } else {
+        } else if (response.status === 401 || response.status === 403) {
           // Token invalid, clear it
           localStorage.removeItem(TOKEN_KEY);
           dispatch({ type: 'LOGOUT' });
+        } else {
+          // A 5xx (the dev proxy answers 502/504 while the backend restarts) says
+          // nothing about the token, so keep it for the next page load.
+          dispatch({ type: 'SET_ERROR', payload: 'Could not reach the server' });
         }
       } catch {
-        localStorage.removeItem(TOKEN_KEY);
-        dispatch({ type: 'LOGOUT' });
+        // Network error: the backend may just be restarting. Keep the token.
+        dispatch({ type: 'SET_ERROR', payload: 'Could not reach the server' });
       }
     };
 
@@ -157,6 +162,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearError = useCallback(() => {
     dispatch({ type: 'CLEAR_ERROR' });
   }, []);
+
+  // api.ts reports a 401 on any call, so an expired token returns the user to login.
+  useEffect(() => {
+    setUnauthorizedHandler(logout);
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
 
   const value: AuthContextValue = {
     state,

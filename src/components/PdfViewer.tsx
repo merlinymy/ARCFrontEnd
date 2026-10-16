@@ -16,7 +16,9 @@ import * as pdfjsLib from 'pdfjs-dist';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useApp } from '../context/AppContext';
-import { api, getPdfDownloadUrl, getPdfUrl } from '../services/api';
+import {
+  api, downloadPdfWithAuth, fetchAuthedObjectUrl, getAuthHeaders, getPdfUrl,
+} from '../services/api';
 import type { PageHighlight, PdfHighlight } from '../types';
 import { locationNote } from '../lib/citations';
 import { tightBoxesForCitation } from '../lib/pdfCitationBoxes';
@@ -134,9 +136,12 @@ export function PdfViewer({ paperId }: PdfViewerProps) {
   // ---- load the document ---------------------------------------------------
   useEffect(() => {
     const task = pdfjsLib.getDocument({
-      // No auth header: the endpoint is open, as it was for the iframe, and a
-      // header would turn a same-origin GET into a CORS preflight when
-      // VITE_API_BASE_URL points at another host.
+      // The PDF route requires a token since the library API was closed
+      // (2026-10-16). pdf.js issues the request itself, so the header goes
+      // here rather than on a fetch. Cross-origin this costs a CORS
+      // preflight when VITE_API_BASE_URL points at another host; the server
+      // allows it (explicit origins, allow_headers "*").
+      httpHeaders: getAuthHeaders() as Record<string, string>,
       url: getPdfUrl(paperId),
       cMapUrl: `${DATA_BASE}cmaps/`,
       cMapPacked: true,
@@ -348,17 +353,26 @@ export function PdfViewer({ paperId }: PdfViewerProps) {
     }
   };
 
+  // Both of these used to point an element straight at the API. That stopped
+  // working when the paper routes began requiring a token: neither <a download>
+  // nor window.open can send an Authorization header, so the bytes are fetched
+  // here and the element is pointed at a blob instead.
   const handleDownload = () => {
-    const link = document.createElement('a');
-    link.href = getPdfDownloadUrl(paperId);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    void downloadPdfWithAuth(paperId, filename)
+      .catch(() => setRenderError('Could not download the PDF.'));
   };
 
   const handleOpenInNewTab = () => {
-    window.open(getPdfUrl(paperId, pageNumber), '_blank');
+    void fetchAuthedObjectUrl(getPdfUrl(paperId))
+      .then((objectUrl) => {
+        // The browser's own viewer honours #page=N on a blob: URL, so the
+        // "open at the cited page" behaviour survives.
+        window.open(`${objectUrl}#page=${pageNumber}`, '_blank');
+        // The new tab has loaded the blob by the time this fires; revoking
+        // earlier can race it, and never revoking leaks the whole PDF.
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      })
+      .catch(() => setRenderError('Could not open the PDF.'));
   };
 
   const commitPageInput = () => {

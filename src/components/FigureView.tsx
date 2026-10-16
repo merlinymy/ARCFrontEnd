@@ -1,7 +1,47 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Image as ImageIcon, Maximize2, X, FileText, Download } from 'lucide-react';
-import { getFigureImageUrl } from '../services/api';
+import { fetchAuthedObjectUrl, getFigureImageUrl } from '../services/api';
 import { useApp } from '../context/AppContext';
+
+/**
+ * A crop's bytes as a `blob:` URL the <img> can point at.
+ *
+ * The figure route requires a token since the library API was closed
+ * (2026-10-16), and a browser sends no Authorization header for a
+ * subresource, so `<img src={apiUrl}>` would just 401. Fetching here and
+ * handing over an object URL keeps the route protected.
+ *
+ * `failed` covers both "no crop stored for this id" (papers indexed before
+ * crops were persisted) and a genuine fetch error: the caller renders
+ * nothing either way, so they do not need telling apart.
+ */
+function useAuthedFigure(paperId: string, figureId: string) {
+  const [state, setState] = useState<{ src: string | null; failed: boolean }>({
+    src: null,
+    failed: false,
+  });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    setState({ src: null, failed: false });
+    fetchAuthedObjectUrl(getFigureImageUrl(paperId, figureId), controller.signal)
+      .then((url) => {
+        objectUrl = url;
+        setState({ src: url, failed: false });
+      })
+      .catch(() => {
+        // An abort is this effect being cleaned up, not a missing crop.
+        if (!controller.signal.aborted) setState({ src: null, failed: true });
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [paperId, figureId]);
+
+  return state;
+}
 
 /**
  * A persisted figure or table crop, rendered inline.
@@ -39,13 +79,15 @@ export function FigureView({
   variant = 'inline',
   className = '',
 }: FigureViewProps) {
-  const [failed, setFailed] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
   const [zoomed, setZoomed] = useState(false);
-  const src = getFigureImageUrl(paperId, figureId);
+  const { src, failed: fetchFailed } = useAuthedFigure(paperId, figureId);
+  const failed = fetchFailed || imgFailed;
 
   // A paper indexed before crops were persisted has no bytes for this id. Say
-  // nothing rather than showing a broken image.
-  if (failed) return null;
+  // nothing rather than showing a broken image. Also covers the moment before
+  // the fetch resolves, so no empty frame flashes first.
+  if (failed || !src) return null;
 
   const heightClass = variant === 'thumbnail' ? 'max-h-32' : 'max-h-96';
 
@@ -63,7 +105,7 @@ export function FigureView({
           <img
             src={src}
             alt={label || figureId}
-            onError={() => setFailed(true)}
+            onError={() => setImgFailed(true)}
             className={`w-full ${heightClass} object-contain`}
             loading="lazy"
           />
@@ -121,8 +163,9 @@ export function FigureLightbox({
   onClose,
 }: FigureLightboxProps) {
   const { setViewingPdf } = useApp();
-  const [failed, setFailed] = useState(false);
-  const src = getFigureImageUrl(paperId, figureId);
+  const [imgFailed, setImgFailed] = useState(false);
+  const { src, failed: fetchFailed } = useAuthedFigure(paperId, figureId);
+  const failed = fetchFailed || imgFailed;
 
   const handleKey = useCallback(
     (event: KeyboardEvent) => {
@@ -196,13 +239,17 @@ export function FigureLightbox({
                 figure is still in the PDF.
               </span>
             </p>
-          ) : (
+          ) : src ? (
             <img
               src={src}
               alt={label || figureId}
-              onError={() => setFailed(true)}
+              onError={() => setImgFailed(true)}
               className="max-w-full max-h-[70vh] object-contain"
             />
+          ) : (
+            // The lightbox is already open, so unlike the inline view it needs
+            // to say something while the bytes are on the way.
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-12">Loading figure…</p>
           )}
         </div>
 

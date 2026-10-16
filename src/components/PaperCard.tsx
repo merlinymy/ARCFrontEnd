@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import { FileText, Eye, Trash2, AlertCircle, Loader2, Calendar, Layers, User, Quote, Check, Edit2, X, Save } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { updatePaperMetadata } from '../services/api';
+import { API_BASE, getAuthHeaders, updatePaperMetadata } from '../services/api';
 import type { Paper } from '../types';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 interface PaperCardProps {
   paper: Paper;
@@ -101,7 +99,9 @@ export function PaperCard({ paper, viewMode, preview, searchQuery, isSelected, o
     if (needsDoiExtraction) {
       // Auto-extract DOI from PDF
       try {
-        const response = await fetch(`${API_BASE}/papers/${paper.id}/extract-doi`);
+        const response = await fetch(`${API_BASE}/papers/${paper.id}/extract-doi`, {
+          headers: getAuthHeaders(),
+        });
         if (response.ok) {
           const data = await response.json();
           if (data.doi) {
@@ -160,7 +160,9 @@ export function PaperCard({ paper, viewMode, preview, searchQuery, isSelected, o
 
     setIsFetchingDoi(true);
     try {
-      const response = await fetch(`${API_BASE}/metadata/doi/${encodeURIComponent(editDoi.trim())}`);
+      const response = await fetch(`${API_BASE}/metadata/doi/${encodeURIComponent(editDoi.trim())}`, {
+        headers: getAuthHeaders(),
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch metadata from DOI');
       }

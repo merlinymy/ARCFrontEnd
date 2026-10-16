@@ -34,6 +34,7 @@ import type {
   LibraryMapCollections,
 } from '../types';
 import { getAuthToken } from '../context/AuthContext';
+import { notifyUnauthorized } from './unauthorized';
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -145,6 +146,7 @@ class ApiError extends Error {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized();
     // Read as text first, then try to parse as JSON
     const text = await response.text();
     let details;
@@ -253,6 +255,7 @@ export async function postEventStream<E>(
   });
 
   if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized();
     const text = await response.text();
     let details;
     try {
@@ -341,19 +344,19 @@ export async function queryPapersStream(
 
 // Get health status
 export async function getHealth(): Promise<HealthStatus> {
-  const response = await fetch(`${API_BASE}/health`);
+  const response = await fetch(`${API_BASE}/health`, { headers: getAuthHeaders() });
   return handleResponse<HealthStatus>(response);
 }
 
 // Quick health check
 export async function getQuickHealth(): Promise<{ status: string }> {
-  const response = await fetch(`${API_BASE}/health/quick`);
+  const response = await fetch(`${API_BASE}/health/quick`, { headers: getAuthHeaders() });
   return handleResponse<{ status: string }>(response);
 }
 
 // Get statistics
 export async function getStats(): Promise<StatsResponse> {
-  const response = await fetch(`${API_BASE}/stats`);
+  const response = await fetch(`${API_BASE}/stats`, { headers: getAuthHeaders() });
   return handleResponse<StatsResponse>(response);
 }
 
@@ -365,6 +368,7 @@ export async function clearConversation(
   const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : '';
   const response = await fetch(`${API_BASE}/conversation/clear${query}`, {
     method: 'POST',
+    headers: getAuthHeaders(),
   });
   return handleResponse<{ status: string; message: string }>(response);
 }
@@ -427,7 +431,7 @@ export async function getPapers(
   if (sortOrder) {
     params.append('sort_order', sortOrder);
   }
-  const response = await fetch(`${API_BASE}/papers?${params}`);
+  const response = await fetch(`${API_BASE}/papers?${params}`, { headers: getAuthHeaders() });
   const data = await handleResponse<{
     papers: Array<{
       paper_id: string;
@@ -460,7 +464,7 @@ export async function getPapers(
 
 // Get a single paper
 export async function getPaper(paperId: string): Promise<Paper> {
-  const response = await fetch(`${API_BASE}/papers/${paperId}`);
+  const response = await fetch(`${API_BASE}/papers/${paperId}`, { headers: getAuthHeaders() });
   const data = await handleResponse<{
     paper_id: string;
     title: string;
@@ -500,8 +504,49 @@ export function getPdfDownloadUrl(paperId: string): string {
 // Goes through API_BASE like every other call: two hardcoded-host calls in
 // PaperCard.tsx were removed for exactly this reason, and an <img src> is just
 // as broken by a wrong host as a fetch is.
+//
+// NOT usable directly as an <img src> since the backend closed these routes
+// (2026-10-16): a browser sends no Authorization header for a subresource, so
+// the request comes back 401. Use fetchAuthedObjectUrl() below.
 export function getFigureImageUrl(paperId: string, figureId: string): string {
   return `${API_BASE}/papers/${paperId}/figures/${encodeURIComponent(figureId)}/image`;
+}
+
+// Fetch bytes that an <img src> or <a href> would otherwise request without
+// credentials, and hand back a blob: URL for the element to point at.
+//
+// Needed because the paper routes now require a token. An element attribute
+// cannot carry one, so the bytes are fetched here and handed over as an
+// object URL instead. The caller owns that URL and must URL.revokeObjectURL()
+// it when the element goes away, or the blob leaks for the page's lifetime.
+export async function fetchAuthedObjectUrl(
+  url: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const response = await fetch(url, { headers: getAuthHeaders(), signal });
+  if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized();
+    throw new ApiError(response.status, `Failed to load ${url}`);
+  }
+  return URL.createObjectURL(await response.blob());
+}
+
+// Save a paper's PDF. The <a download> attribute cannot authenticate, so the
+// bytes come through fetch and the link is pointed at a blob instead.
+export async function downloadPdfWithAuth(paperId: string, filename: string): Promise<void> {
+  const objectUrl = await fetchAuthedObjectUrl(getPdfDownloadUrl(paperId));
+  try {
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    // Safari needs the URL to outlive the click, so revoke on the next turn
+    // of the event loop rather than immediately.
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  }
 }
 
 // List a paper's figures and tables
@@ -516,6 +561,7 @@ export async function getPaperFigures(paperId: string): Promise<PaperFigureList>
 export async function deletePaper(paperId: string): Promise<DeleteResponse> {
   const response = await fetch(`${API_BASE}/papers/${paperId}`, {
     method: 'DELETE',
+    headers: getAuthHeaders(),
   });
   return handleResponse<DeleteResponse>(response);
 }
@@ -622,6 +668,7 @@ export async function updatePaperMetadata(
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
     },
     body: JSON.stringify(updates),
   });
@@ -673,7 +720,7 @@ export async function searchPapers(
     limit: limit.toString(),
     offset: offset.toString(),
   });
-  const response = await fetch(`${API_BASE}/papers/search?${params}`);
+  const response = await fetch(`${API_BASE}/papers/search?${params}`, { headers: getAuthHeaders() });
   const data = await handleResponse<{
     results: Array<{
       paper_id: string;
@@ -726,6 +773,7 @@ export async function uploadPaper(file: File): Promise<UploadResponse> {
 
   const response = await fetch(`${API_BASE}/papers/upload`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData,
   });
 
@@ -742,10 +790,12 @@ export async function uploadPaperStream(
 
   const response = await fetch(`${API_BASE}/papers/upload/stream`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData,
   });
 
   if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized();
     const text = await response.text();
     let details;
     try {
