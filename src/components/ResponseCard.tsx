@@ -8,7 +8,7 @@ import {
   Cpu,
   Database,
   Filter,
-  Tag,
+  ChevronRight,
   AlertTriangle,
   AlertCircle,
   ShieldAlert,
@@ -434,6 +434,9 @@ function AnswerCard({ queryMessage, responseMessage }: ResponseCardProps) {
   // cannot confuse it. Memoised because this runs on every streamed token.
   const draft = useMemo(() => splitArtifact(responseMessage.content), [responseMessage.content]);
 
+  // Collapsed by default: see the Sources block below.
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+
   // Figures from the sources the answer actually cited (all retrieved sources
   // for a pre-W3 answer, which has no notion of cited). Rendered in the thread
   // so the user can look at the actual plot without leaving the conversation --
@@ -468,27 +471,12 @@ function AnswerCard({ queryMessage, responseMessage }: ResponseCardProps) {
               {queryMessage.content}
             </p>
 
-            {metadata?.queryType && (
-              <div className="flex items-center gap-4 mt-2 text-sm">
-                <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400">
-                  <Tag className="w-4 h-4" />
-                  <span>
-                    Query Type:{' '}
-                    <span className="font-medium text-blue-600 dark:text-blue-400 uppercase">
-                      {metadata.queryType}
-                    </span>
-                  </span>
-                </div>
-
-                {metadata.expandedQuery && (
-                  <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-500">
-                    <span className="truncate max-w-xs">
-                      Expanded: "{metadata.expandedQuery}"
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Query type and the expanded query used to be reported here.
+                Both describe machinery the user did not ask about and can do
+                nothing with - and neither is even current: the classifier
+                that produced the type is off, and query expansion no longer
+                runs. Stored messages still carry the fields; nothing shows
+                them. */}
           </div>
         </div>
       </div>
@@ -587,16 +575,35 @@ function AnswerCard({ queryMessage, responseMessage }: ResponseCardProps) {
         </div>
       )}
 
-      {/* Sources: each with the passages it was cited for */}
+      {/* Sources: each with the passages it was cited for.
+          Collapsed by default. They are the evidence, not the answer, and
+          expanded they are longer than the answer itself - the citation
+          chips in the text are the normal way in. One click when you want to
+          check the working. */}
       {!isNotice && allSources.length > 0 && (
-        <SourcesPanel
-          sources={allSources}
-          citations={citations}
-          claims={metadata?.claims ?? []}
-          entailment={metadata?.entailment}
-          entailmentPending={Boolean(metadata?.entailmentPending)}
-          retrievalMode={metadata?.retrievalMode}
-        />
+        <div className="mt-3">
+          <button
+            onClick={() => setSourcesOpen((v) => !v)}
+            aria-expanded={sourcesOpen}
+            className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+          >
+            <ChevronRight
+              className={`w-4 h-4 transition-transform ${sourcesOpen ? 'rotate-90' : ''}`}
+              aria-hidden
+            />
+            {allSources.length} source{allSources.length === 1 ? '' : 's'}
+          </button>
+          {sourcesOpen && (
+            <SourcesPanel
+              sources={allSources}
+              citations={citations}
+              claims={metadata?.claims ?? []}
+              entailment={metadata?.entailment}
+              entailmentPending={Boolean(metadata?.entailmentPending)}
+              retrievalMode={metadata?.retrievalMode}
+            />
+          )}
+        </div>
       )}
 
       {/* Pipeline Details */}

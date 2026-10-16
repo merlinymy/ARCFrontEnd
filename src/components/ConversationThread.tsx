@@ -1,25 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageSquare, Sparkles, Check, Loader2, SkipForward, AlertTriangle, Globe, BookOpen, Upload, Settings, Wrench } from 'lucide-react';
+import { MessageSquare, Sparkles, Loader2, Globe, BookOpen, Upload, Settings, Wrench } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { ResponseCard } from './ResponseCard';
 import { describeToolCall } from '../lib/deep';
 import type { PipelineStepInfo, RunProgress } from '../types';
-
-// Pipeline step status icon
-function StepIcon({ status }: { status: PipelineStepInfo['status'] }) {
-  switch (status) {
-    case 'completed':
-      return <Check className="w-3.5 h-3.5 text-green-500" />;
-    case 'active':
-      return <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />;
-    case 'skipped':
-      return <SkipForward className="w-3.5 h-3.5 text-gray-400" />;
-    case 'failed':
-      return <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />;
-    default:
-      return <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 dark:border-gray-600" />;
-  }
-}
 
 // Seconds since `startedAt`, ticking once a second. A deep run can take
 // minutes; a running clock is what tells the reader it is working, not stuck.
@@ -146,80 +130,33 @@ function PipelineProgress({
       {/* Long-context and deep runs: what is happening, and for how long */}
       <RunDetails run={runProgress ?? null} deepMode={deepMode} />
 
-      {/* Current step indicator */}
-      {activeStep && !webSearchProgress && (
-        <div className="flex items-start gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+      {/* What the model is thinking, not which stage of the pipeline it is
+          in. The five-step grid that used to be here described a fixed
+          retrieve-then-answer pipeline that no longer matches what runs: the
+          model chooses its own searches now, so the steps were both wrong and
+          uninteresting. The reasoning is the part worth watching. */}
+      {!webSearchProgress && (activeStep || thinkingProgress) && (
+        <div className="flex items-start gap-3">
           <Loader2 className="w-5 h-5 mt-0.5 shrink-0 text-blue-500 animate-spin" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="font-medium text-gray-900 dark:text-gray-100">
-              {activeStep.label}
+              {thinkingProgress ? 'Thinking' : activeStep?.label}
             </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              {activeStep.description}
-            </div>
-            {thinkingProgress && (
-              <div className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-sm text-gray-500 dark:text-gray-400 italic">
+            {thinkingProgress ? (
+              // Scrolls within a fixed height: reasoning can run long, and a
+              // block that grows without bound pushes the answer off screen.
+              <div className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-gray-500 dark:text-gray-400 italic">
                 {thinkingProgress}
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                {activeStep?.description}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Steps list */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-        {steps.map((step) => (
-          <div
-            key={step.name}
-            className={`flex flex-col items-center p-2 rounded-lg transition-colors ${
-              step.status === 'active'
-                ? 'bg-blue-50 dark:bg-blue-900/20'
-                : step.status === 'completed'
-                ? 'bg-green-50 dark:bg-green-900/10'
-                : step.status === 'failed'
-                ? 'bg-amber-50 dark:bg-amber-900/20'
-                : step.status === 'skipped'
-                ? 'bg-gray-50 dark:bg-gray-800/50'
-                : ''
-            }`}
-          >
-            <StepIcon status={step.status} />
-            <span
-              className={`text-xs mt-1 text-center ${
-                step.status === 'active'
-                  ? 'text-blue-600 dark:text-blue-400 font-medium'
-                  : step.status === 'completed'
-                  ? 'text-green-600 dark:text-green-400'
-                  : step.status === 'failed'
-                  ? 'text-amber-600 dark:text-amber-400'
-                  : step.status === 'skipped'
-                  ? 'text-gray-500 dark:text-gray-400'
-                  : 'text-gray-500 dark:text-gray-400'
-              }`}
-            >
-              {step.label}
-            </span>
-            {step.status === 'skipped' && (
-              <span className="text-xs text-gray-400 dark:text-gray-500">
-                skipped
-              </span>
-            )}
-            {step.status === 'failed' && (
-              <span className="text-xs text-amber-500 dark:text-amber-400">
-                failed
-              </span>
-            )}
-            {/* Show step data if available */}
-            {step.data && step.status === 'completed' && (
-              <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                {typeof step.data.count === 'number' && `${step.data.count}`}
-                {typeof step.data.type === 'string' && `${step.data.type}`}
-                {Array.isArray(step.data.found) && step.data.found.length > 0 && `${step.data.found.length}`}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
