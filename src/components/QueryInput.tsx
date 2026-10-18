@@ -4,10 +4,8 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
-  Trash2,
   Search,
   Square,
-  UserRound,
   PenLine,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -30,8 +28,8 @@ const EFFORT_OPTIONS: { value: EffortLevel; label: string }[] = [
 ];
 
 export function QueryInput() {
-  const { state, dispatch, submitQuery, stopQuery, clearConversation, setActivePage } = useApp();
-  const { currentQuery, queryOptions, isLoading, activeConversationId } = state;
+  const { state, dispatch, submitQuery, stopQuery } = useApp();
+  const { currentQuery, queryOptions, isLoading } = state;
   const isDeepMode =
     queryOptions.mode === 'develop' || queryOptions.mode === 'critique' || queryOptions.mode === 'draft';
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -134,63 +132,6 @@ export function QueryInput() {
           </div>
         </div>
 
-        {/* Advanced options toggle */}
-        <div className="flex items-center justify-between mt-3">
-          <div className="flex items-center gap-4 flex-wrap">
-            <button
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              aria-expanded={showAdvanced}
-              className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-            >
-              {showAdvanced ? (
-                <ChevronUp className="w-4 h-4" />
-              ) : (
-                <ChevronDown className="w-4 h-4" />
-              )}
-              Advanced Options
-            </button>
-
-            {/* Per message: whether this question sees the profile. */}
-            <span className="inline-flex items-center gap-1">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={queryOptions.useProfile}
-                onClick={() =>
-                  dispatch({ type: 'SET_QUERY_OPTIONS', payload: { useProfile: !queryOptions.useProfile } })
-                }
-                className={`flex items-center gap-1.5 text-sm rounded-md px-1.5 py-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                  queryOptions.useProfile
-                    ? 'text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-              >
-                <UserRound className="w-4 h-4" aria-hidden="true" />
-                Profile: {queryOptions.useProfile ? 'on' : 'off'}
-              </button>
-              <InfoTooltip content="Whether this question is sent together with your profile (your background and preferences). Switch it off for a question that should not be shaped by them. The View link shows exactly what is sent." />
-              <button
-                type="button"
-                onClick={() => setActivePage('profile')}
-                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline decoration-dotted underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
-              >
-                view
-              </button>
-            </span>
-          </div>
-
-          {activeConversationId && (
-            <button
-              onClick={clearConversation}
-              className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-              title="Deletes this conversation. The model sees a thread only through its stored messages, so clearing it means deleting it."
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete conversation
-            </button>
-          )}
-        </div>
-
         {/* Always visible, outside Advanced Options: the two things that decide
             what comes back. The stance changes the shape of the answer and the
             model changes who writes it — neither is an advanced tweak. The
@@ -241,6 +182,22 @@ export function QueryInput() {
             </p>
           )}
         </div>
+
+        {/* Below the controls it expands, not above them: a toggle that sits
+            over the thing it reveals pushes that thing down the page every
+            time it is opened. */}
+        <button
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          aria-expanded={showAdvanced}
+          className="mt-2 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+        >
+          {showAdvanced ? (
+            <ChevronUp className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5" />
+          )}
+          Advanced Options
+        </button>
 
         {/* Advanced options panel */}
         {showAdvanced && (
