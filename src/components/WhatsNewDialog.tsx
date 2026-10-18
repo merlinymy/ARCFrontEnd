@@ -15,16 +15,18 @@ const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabi
 
 function Entries({ entries }: { entries: ChangelogEntry[] }) {
   return (
-    <div className="space-y-4">
+    <ul className="space-y-2">
       {entries.map((entry) => (
-        <div key={entry.title}>
-          <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{entry.title}</h4>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">
-            {entry.body}
-          </p>
-        </div>
+        <li
+          key={entry}
+          className="relative pl-4 text-sm leading-relaxed text-gray-600 dark:text-gray-400
+                     before:absolute before:left-0 before:top-[0.55em] before:h-1 before:w-1
+                     before:rounded-full before:bg-gray-400 dark:before:bg-gray-600"
+        >
+          {entry}
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -32,9 +34,6 @@ function Section({ section }: { section: ChangelogSection }) {
   return (
     <section>
       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{section.heading}</h3>
-      {section.intro && (
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{section.intro}</p>
-      )}
       <div className="mt-3">
         <Entries entries={section.entries} />
       </div>
@@ -141,7 +140,6 @@ export function WhatsNewDialog({ onClose }: WhatsNewDialogProps) {
                   <span className="text-xs text-gray-500 dark:text-gray-400">{release.date}</span>
                 </div>
               )}
-              {release.requested && <Section section={release.requested} />}
               {release.sections.map((section) => (
                 <Section key={section.heading} section={section} />
               ))}
