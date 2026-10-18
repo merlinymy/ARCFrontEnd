@@ -191,51 +191,51 @@ export function QueryInput() {
           )}
         </div>
 
-        {/* Always visible, outside Advanced Options: the person should see which
-            model will answer, and any caution about it, before they send. */}
-        <div className="mt-2">
+        {/* Always visible, outside Advanced Options: the two things that decide
+            what comes back. The stance changes the shape of the answer and the
+            model changes who writes it — neither is an advanced tweak. The
+            stance especially: the composer hint asks you to reconsider it, and
+            that is useless when the control is behind a toggle. */}
+        <div className="mt-2 space-y-2">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              {ANSWER_MODES.map((value: AnswerMode) => (
+                <button
+                  key={value}
+                  title={ANSWER_MODE_DESCRIPTIONS[value]}
+                  onClick={() =>
+                    dispatch({ type: 'SET_QUERY_OPTIONS', payload: { mode: value } })
+                  }
+                  className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
+                    queryOptions.mode === value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                  }`}
+                >
+                  {ANSWER_MODE_LABELS[value]}
+                </button>
+              ))}
+              {/* No "Mode" heading: the labels say what they are, and a
+                  persistent row should cost as little height as it can. */}
+              <InfoTooltip content="What kind of reply you want. Ask answers the question. Brainstorm generates possibilities. Develop builds out an idea you state. Refine tightens one. Critique argues against it. Draft turns it into writing. This changes how the answer is written, not which papers are searched." />
+            </div>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {ANSWER_MODE_DESCRIPTIONS[queryOptions.mode]}
+            </p>
+            {isDeepMode && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                This mode searches your library itself, over several steps, and can use a project
+                notebook. It takes longer than Ask: often a minute or more.
+              </p>
+            )}
+          </div>
+
           <ModelPicker />
         </div>
 
         {/* Advanced options panel */}
         {showAdvanced && (
           <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
-            {/* Mode (stance) - FIRST. Selects how the model responds, not what
-                it retrieves. */}
-            <div className="mb-4">
-              <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Mode
-                <InfoTooltip content="What kind of reply you want. Ask answers the question. Brainstorm generates possibilities. Develop builds out an idea you state. Refine tightens one. Critique argues against it. Draft turns it into writing. This changes how the answer is written, not which papers are searched." />
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {ANSWER_MODES.map((value: AnswerMode) => (
-                  <button
-                    key={value}
-                    title={ANSWER_MODE_DESCRIPTIONS[value]}
-                    onClick={() =>
-                      dispatch({ type: 'SET_QUERY_OPTIONS', payload: { mode: value } })
-                    }
-                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                      queryOptions.mode === value
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:border-blue-400'
-                    }`}
-                  >
-                    {ANSWER_MODE_LABELS[value]}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                {ANSWER_MODE_DESCRIPTIONS[queryOptions.mode]}
-              </p>
-              {isDeepMode && (
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  This mode searches your library itself, over several steps, and can use a project
-                  notebook. It takes longer than Ask: often a minute or more.
-                </p>
-              )}
-            </div>
-
             {/* Answer depth and web search */}
             <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
               <div className="w-full sm:w-64">
