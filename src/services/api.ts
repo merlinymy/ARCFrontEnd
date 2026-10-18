@@ -1,5 +1,6 @@
 import type {
   QueryResponse,
+  RoutePreview,
   TurnBudget,
   HealthStatus,
   StatsResponse,
@@ -215,6 +216,30 @@ export async function getAnswerModels(): Promise<AnswerModelsResponse> {
     headers: getAuthHeaders(),
   });
   return handleResponse<AnswerModelsResponse>(response);
+}
+
+/**
+ * Would this message be answered, or written? Asked while the user types.
+ *
+ * The server runs only its keyword heuristic — no model, no retrieval — so
+ * this is cheap enough to call on a debounce. It asks the same router that
+ * sending would, so the hint cannot promise something different from what
+ * actually happens.
+ *
+ * `signal` aborts a call the next keystroke has already made stale.
+ */
+export async function previewRoute(
+  question: string,
+  mode: AnswerMode,
+  signal?: AbortSignal
+): Promise<RoutePreview> {
+  const response = await fetch(`${API_BASE}/route/preview`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ question, mode }),
+    signal,
+  });
+  return handleResponse<RoutePreview>(response);
 }
 
 // Query the research papers (non-streaming). Computes entailment before it
@@ -1533,6 +1558,7 @@ export async function resetAllPrompts(): Promise<{ message: string }> {
 export const api = {
   queryPapers,
   getAnswerModels,
+  previewRoute,
   queryPapersStream,
   getHealth,
   getQuickHealth,

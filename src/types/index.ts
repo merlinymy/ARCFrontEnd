@@ -200,6 +200,27 @@ export interface DeepInfo {
  * `build_budget`). Only the fields the UI reads are typed. `model` is the model
  * that served the turn, so prices are for it, not for the one asked for.
  */
+/**
+ * What the server would do with the message currently in the composer.
+ *
+ * `POST /route/preview`, keyword heuristic only — no model call. It exists so
+ * the rule has one implementation: a TypeScript copy of `detect_write_signals`
+ * would drift from the Python the router actually runs.
+ */
+export interface RoutePreview {
+  /**
+   * The message clearly asks for writing *and* the selected stance would
+   * answer it as a question anyway. The only field the hint keys on.
+   */
+  suggest_write: boolean;
+  intent: 'query' | 'write';
+  /** The stance that fits the request — `critique` for reviewer questions. */
+  stance: AnswerMode | null;
+  task: string | null;
+  /** The router's own words, so the hint can say why instead of asserting. */
+  reason: string;
+}
+
 export interface TurnBudget {
   model?: string | null;
   /** False when the price table has no row for `model`: its cost is unknown. */

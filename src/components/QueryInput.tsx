@@ -8,8 +8,10 @@ import {
   Search,
   Square,
   UserRound,
+  PenLine,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useRouteHint } from '../lib/useRouteHint';
 import { InfoTooltip } from './Tooltip';
 import { ModelPicker } from './ModelPicker';
 import {
@@ -33,6 +35,8 @@ export function QueryInput() {
   const isDeepMode =
     queryOptions.mode === 'develop' || queryOptions.mode === 'critique' || queryOptions.mode === 'draft';
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Asks the server what it would do with what is in the box, debounced.
+  const routeHint = useRouteHint(currentQuery, queryOptions.mode);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea with a max of 104px (about 4 lines)
@@ -62,6 +66,31 @@ export function QueryInput() {
   return (
     <div className="bg-white dark:bg-gray-900 p-4 max-h-[60vh] overflow-y-auto shrink-0">
       <div className="max-w-4xl mx-auto">
+        {/* Caught before it is sent, not corrected after. A pinned stance
+            always wins at the router, so this message would be answered as a
+            question — costing the user a turn of the wrong shape and another
+            ask. Switching here costs nothing, and the router's own reason is
+            quoted so the hint explains itself instead of asserting. */}
+        {routeHint?.stance && !isLoading && (
+          <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-900/60
+                          bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
+            <PenLine className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+            <p className="flex-1 min-w-0 text-xs text-amber-900 dark:text-amber-200">
+              This reads as a request to write, but the {ANSWER_MODE_LABELS[queryOptions.mode]}{' '}
+              stance will answer it as a question. {routeHint.reason}
+            </p>
+            <button
+              onClick={() =>
+                dispatch({ type: 'SET_QUERY_OPTIONS', payload: { mode: routeHint.stance! } })
+              }
+              className="shrink-0 rounded-md bg-amber-600 px-2 py-1 text-xs font-medium text-white
+                         hover:bg-amber-700 transition-colors"
+            >
+              Switch to {ANSWER_MODE_LABELS[routeHint.stance]}
+            </button>
+          </div>
+        )}
+
         {/* Main input area */}
         <div className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent">
           <textarea
