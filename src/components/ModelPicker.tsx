@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronUp, Cpu } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { InfoTooltip } from './Tooltip';
 import { api } from '../services/api';
@@ -68,39 +68,41 @@ export function ModelPicker() {
     }`;
 
   return (
-    <div className="w-full">
+    // Sits at the end of the controls row, so the panel it opens hangs below
+    // its own corner rather than stretching the row. Normal flow, not a
+    // popover: the composer scrolls (`overflow-y-auto`), which would clip one
+    // opening upward, and there is no room below it.
+    <div className="min-w-0">
       <span className="inline-flex items-center gap-1">
         <button
           type="button"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="flex items-center gap-1.5 text-sm rounded-md px-1.5 py-0.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          aria-label={`Answer model: ${chosen ? current?.label : defaultLabel}`}
+          className="flex items-center gap-1 text-xs rounded-md px-2 py-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
-          <Cpu className="w-4 h-4" aria-hidden="true" />
-          Model: {chosen ? current?.label : `${defaultLabel} (default)`}
+          {/* The label alone. A "Model:" prefix and an icon both repeat what
+              the value already says, on a row that is on screen permanently. */}
+          {chosen ? current?.label : defaultLabel}
+          {/* The caution does not fit a one-line control, but it must not
+              vanish either: the mark says there is one, and opening shows it. */}
+          {current?.caution && (
+            <AlertTriangle className="w-3 h-3 text-amber-500" aria-hidden="true" />
+          )}
           {open ? (
-            <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+            <ChevronUp className="w-3 h-3" aria-hidden="true" />
           ) : (
-            <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+            <ChevronDown className="w-3 h-3" aria-hidden="true" />
           )}
         </button>
         <InfoTooltip content="Which model writes the answer. Your choice is kept for every conversation. Default leaves it to the server, which also decides what happens if that model cannot answer." />
       </span>
 
-      {/* Closed, the caution still shows for the model that will answer: it is
-          the point of the picker, and a hover is too easy to miss. */}
-      {!open && current?.caution && (
-        <p role="note" className={`mt-1.5 ml-1.5 ${CAUTION_CLASS}`}>
-          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-          <span>{current.caution}</span>
-        </p>
-      )}
-
       {open && (
         <div
           role="radiogroup"
           aria-label="Answer model"
-          className="mt-2 space-y-2 animate-fade-in"
+          className="mt-2 w-80 max-w-[75vw] space-y-2 animate-fade-in"
         >
           <button
             type="button"

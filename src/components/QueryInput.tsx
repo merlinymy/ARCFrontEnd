@@ -196,9 +196,12 @@ export function QueryInput() {
             model changes who writes it — neither is an advanced tweak. The
             stance especially: the composer hint asks you to reconsider it, and
             that is useless when the control is behind a toggle. */}
-        <div className="mt-2 space-y-2">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
+        <div className="mt-2">
+          {/* One row: stance on the left, model pushed to the right by
+              `ml-auto`. `items-start` so the modes stay put when the model's
+              panel opens underneath it instead of re-centring the row. */}
+          <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               {ANSWER_MODES.map((value: AnswerMode) => (
                 <button
                   key={value}
@@ -219,18 +222,24 @@ export function QueryInput() {
                   persistent row should cost as little height as it can. */}
               <InfoTooltip content="What kind of reply you want. Ask answers the question. Brainstorm generates possibilities. Develop builds out an idea you state. Refine tightens one. Critique argues against it. Draft turns it into writing. This changes how the answer is written, not which papers are searched." />
             </div>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {ANSWER_MODE_DESCRIPTIONS[queryOptions.mode]}
-            </p>
-            {isDeepMode && (
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                This mode searches your library itself, over several steps, and can use a project
-                notebook. It takes longer than Ask: often a minute or more.
-              </p>
-            )}
+
+            <div className="ml-auto">
+              <ModelPicker />
+            </div>
           </div>
 
-          <ModelPicker />
+          {/* Below the row, not in it: these change with the stance, and the
+              latency warning is what stops someone picking Develop and waiting
+              a minute without knowing why. */}
+          <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+            {ANSWER_MODE_DESCRIPTIONS[queryOptions.mode]}
+          </p>
+          {isDeepMode && (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              This mode searches your library itself, over several steps, and can use a project
+              notebook. It takes longer than Ask: often a minute or more.
+            </p>
+          )}
         </div>
 
         {/* Advanced options panel */}
