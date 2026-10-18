@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react';
 import { FileText, X } from 'lucide-react';
+import { ArtifactDock } from './ArtifactDock';
+import { ArtifactProvider } from './ArtifactProvider';
 import { ConversationThread } from './ConversationThread';
 import { QueryInput } from './QueryInput';
 import { ProjectBar } from './ProjectBar';
@@ -26,7 +28,14 @@ export function ChatPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 min-h-0">
+    // The provider wraps both: the thread publishes drafts, the dock shows them.
+    <ArtifactProvider>
+    {/* A row: the conversation, and the draft beside it when there is one.
+        `min-w-0` on the chat column so a long unbroken line in an answer cannot
+        push the dock off-screen — a flex child's default min-width is its
+        content, not zero. */}
+    <div className="flex-1 flex min-h-0 min-w-0">
+      <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 min-h-0 min-w-0">
       <ProjectBar />
       {/* Top border - shows when content scrolled under header */}
       <div className={`h-px shrink-0 transition-colors ${hasScrolledContent.top ? 'bg-gray-200 dark:bg-gray-700' : 'bg-transparent'}`} />
@@ -68,6 +77,10 @@ export function ChatPage() {
       )}
 
       <QueryInput />
+      </div>
+
+      <ArtifactDock />
     </div>
+    </ArtifactProvider>
   );
 }

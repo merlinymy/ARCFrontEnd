@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Search,
   CheckCircle,
@@ -24,7 +24,9 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AnswerBody } from './AnswerBody';
+import { ArtifactChip } from './ArtifactChip';
 import { ArtifactPanel } from './ArtifactPanel';
+import { useArtifacts } from './artifactContext';
 import { splitArtifact } from '../lib/artifact';
 import { EntailmentBadge, EntailmentPending } from './EntailmentBadge';
 import { SourcesPanel } from './SourcesPanel';
@@ -434,6 +436,24 @@ function AnswerCard({ queryMessage, responseMessage }: ResponseCardProps) {
   // cannot confuse it. Memoised because this runs on every streamed token.
   const draft = useMemo(() => splitArtifact(responseMessage.content), [responseMessage.content]);
 
+  // Hand the draft to the dock. Runs on every streamed chunk, so the provider
+  // ignores a report that changes nothing; see ArtifactProvider.publish.
+  const { publish } = useArtifacts();
+  useEffect(() => {
+    if (!draft.artifact) return;
+    publish({
+      messageId: responseMessage.id,
+      title: draft.artifact.title,
+      content: draft.artifact.content,
+      closed: draft.artifact.closed,
+      citations,
+      claims: metadata?.claims,
+      entailment: metadata?.entailment,
+      entailmentPending: Boolean(metadata?.entailmentPending),
+    });
+  }, [draft.artifact, responseMessage.id, citations, metadata?.claims,
+      metadata?.entailment, metadata?.entailmentPending, publish]);
+
   // Collapsed by default: see the Sources block below.
   const [sourcesOpen, setSourcesOpen] = useState(false);
 
@@ -503,15 +523,30 @@ function AnswerCard({ queryMessage, responseMessage }: ResponseCardProps) {
                 />
               )}
               {draft.artifact && (
-                <ArtifactPanel
-                  title={draft.artifact.title}
-                  content={draft.artifact.content}
-                  closed={draft.artifact.closed}
-                  citations={citations}
-                  claims={metadata?.claims}
-                  entailment={metadata?.entailment}
-                  entailmentPending={Boolean(metadata?.entailmentPending)}
-                />
+                <>
+                  {/* Wide: a chip here, the document in the dock beside the
+                      chat. Narrow: no room for two columns, so the draft stays
+                      inline exactly as it was. One source of truth either way —
+                      both read the same `draft.artifact`. */}
+                  <div className="hidden lg:block">
+                    <ArtifactChip
+                      title={draft.artifact.title}
+                      closed={draft.artifact.closed}
+                      messageId={responseMessage.id}
+                    />
+                  </div>
+                  <div className="lg:hidden">
+                    <ArtifactPanel
+                      title={draft.artifact.title}
+                      content={draft.artifact.content}
+                      closed={draft.artifact.closed}
+                      citations={citations}
+                      claims={metadata?.claims}
+                      entailment={metadata?.entailment}
+                      entailmentPending={Boolean(metadata?.entailmentPending)}
+                    />
+                  </div>
+                </>
               )}
             </>
           )}
