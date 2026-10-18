@@ -10,6 +10,7 @@ import type {
   EntailmentReport,
   PageHighlight,
   PdfHighlight,
+  TurnBudget,
 } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -256,4 +257,23 @@ export function formatModelName(id: string | null | undefined): string | null {
     else words.push(part.charAt(0).toUpperCase() + part.slice(1));
   }
   return [...words, nums.join('.')].filter(Boolean).join(' ');
+}
+
+/**
+ * What one turn cost, as text, or null when there is nothing honest to say.
+ *
+ * Reads `actual.cost_usd` only: the response's own counters. The `estimate`
+ * figure is input-only and an upper bound, so showing it as the turn's cost
+ * would overstate it. Null for an unpriced model (`known_model` false or no
+ * price row), a message from before the backend sent a budget, and zero:
+ * "$0.00" would read as free when it means unmeasured.
+ *
+ * Always three decimals. A single answer is usually cents or fractions of one,
+ * and a precision that changes with the size makes two answers hard to compare.
+ */
+export function formatTurnCost(budget: TurnBudget | null | undefined): string | null {
+  if (!budget || budget.known_model === false) return null;
+  const cost = budget.actual?.cost_usd;
+  if (typeof cost !== 'number' || !Number.isFinite(cost) || cost <= 0) return null;
+  return cost < 0.0005 ? '<$0.001' : `$${cost.toFixed(3)}`;
 }

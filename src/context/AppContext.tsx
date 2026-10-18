@@ -60,6 +60,26 @@ function writeActiveProject(id: string | null) {
   }
 }
 
+// The answer model is a per-user choice, not per-conversation. The server's
+// preferences record has no field for it, so it lives in this browser, with
+// the same fallbacks as the active project.
+const ANSWER_MODEL_KEY = 'answerModel';
+function readAnswerModel(): string | null {
+  try {
+    return typeof window !== 'undefined' ? localStorage.getItem(ANSWER_MODEL_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+function writeAnswerModel(name: string | null) {
+  try {
+    if (name) localStorage.setItem(ANSWER_MODEL_KEY, name);
+    else localStorage.removeItem(ANSWER_MODEL_KEY);
+  } catch {
+    // ignore: a per-viewer convenience only
+  }
+}
+
 // Initial state
 const initialState: AppState = {
   conversations: [],
@@ -70,7 +90,7 @@ const initialState: AppState = {
   hasMorePapers: false,
   isLoadingMorePapers: false,
   currentQuery: '',
-  queryOptions: DEFAULT_QUERY_OPTIONS,
+  queryOptions: { ...DEFAULT_QUERY_OPTIONS, answerModel: readAnswerModel() },
   isLoading: false,
   streamingResponse: null,
   pipelineProgress: null,
@@ -107,7 +127,7 @@ type Action =
   | { type: 'SET_ACTIVE_PAGE'; payload: AppPage }
   | { type: 'SET_CURRENT_QUERY'; payload: string }
   | { type: 'SET_QUERY_OPTIONS'; payload: Partial<QueryOptions> }
-  | { type: 'LOAD_QUERY_OPTIONS'; payload: QueryOptions }
+  | { type: 'LOAD_QUERY_OPTIONS'; payload: Omit<QueryOptions, 'answerModel'> }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_HEALTH'; payload: HealthStatus | null }
   | { type: 'SET_STATS'; payload: StatsResponse | null }
@@ -234,7 +254,12 @@ function appReducer(state: AppState, action: Action): AppState {
       return { ...state, queryOptions: { ...state.queryOptions, ...action.payload } };
 
     case 'LOAD_QUERY_OPTIONS':
-      return { ...state, queryOptions: action.payload };
+      // The server preferences do not carry the answer model, so the load
+      // must not reset the one read from storage at startup.
+      return {
+        ...state,
+        queryOptions: { ...action.payload, answerModel: state.queryOptions.answerModel },
+      };
 
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload };
@@ -829,6 +854,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     writeActiveProject(state.activeProjectId);
   }, [state.activeProjectId]);
 
+  useEffect(() => {
+    writeAnswerModel(state.queryOptions.answerModel);
+  }, [state.queryOptions.answerModel]);
+
   // Apply theme to document
   useEffect(() => {
     if (state.theme === 'dark') {
@@ -1330,6 +1359,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     claims: event.claims ?? [],
                     answerStatus: event.answer_status,
                     servedModel: event.served_model,
+                    // Priced at the served model's rates, so a fallback turn
+                    // is costed as the model that actually answered.
+                    budget: event.budget,
                     fallbackUsed: event.fallback_used,
                     stopReason: event.stop_reason,
                     retrievalMode: event.retrieval_mode,
@@ -1379,6 +1411,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           enableWebSearch: state.queryOptions.enableWebSearch,
           enablePdfUpload: state.queryOptions.enablePdfUpload,
           useProfile: state.queryOptions.useProfile,
+          answerModel: state.queryOptions.answerModel,
           projectId,
         },
         controller.signal

@@ -1,5 +1,6 @@
 import type {
   QueryResponse,
+  TurnBudget,
   HealthStatus,
   StatsResponse,
   Paper,
@@ -32,6 +33,7 @@ import type {
   LibraryMapFootprint,
   LibraryMapEngineering,
   LibraryMapCollections,
+  AnswerModelsResponse,
 } from '../types';
 import { getAuthToken } from '../context/AuthContext';
 import { notifyUnauthorized } from './unauthorized';
@@ -100,6 +102,12 @@ export interface CompleteEvent {
   used_general_knowledge: boolean;
   used_web_search: boolean;
   served_model: string | null;
+  /**
+   * What the turn cost, priced at the *served* model's rates — which is the
+   * fallback model when the first attempt was declined. Null when accounting
+   * failed; accounting never fails a turn.
+   */
+  budget?: TurnBudget | null;
   fallback_used: boolean;
   stop_reason: string | null;
   retrieval_mode: RetrievalMode;
@@ -178,6 +186,8 @@ export interface QueryRequestOptions {
   useProfile?: boolean;
   /** Deep stances: the project whose notebook the model may use. The conversation joins it. */
   projectId?: string | null;
+  /** A registry name from GET /models. Absent = the server's configured model and fallback. */
+  answerModel?: string | null;
 }
 
 // `/query` and `/query/stream` take the same body.
@@ -192,7 +202,19 @@ function buildQueryBody(question: string, options?: QueryRequestOptions) {
     enable_pdf_upload: options?.enablePdfUpload ?? false,
     use_profile: options?.useProfile ?? true,
     project_id: options?.projectId ?? null,
+    // The key is left out, not nulled, when nothing was chosen: no key means
+    // "use the configured model and its fallback", which naming the default
+    // model would not (the registry's fallback can differ from the configured one).
+    ...(options?.answerModel ? { answer_model: options.answerModel } : {}),
   };
+}
+
+// The models the picker offers, with the caution the server holds for each.
+export async function getAnswerModels(): Promise<AnswerModelsResponse> {
+  const response = await fetch(`${API_BASE}/models`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<AnswerModelsResponse>(response);
 }
 
 // Query the research papers (non-streaming). Computes entailment before it
@@ -1510,6 +1532,7 @@ export async function resetAllPrompts(): Promise<{ message: string }> {
 // Export all API functions
 export const api = {
   queryPapers,
+  getAnswerModels,
   queryPapersStream,
   getHealth,
   getQuickHealth,

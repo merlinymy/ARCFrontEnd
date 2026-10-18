@@ -195,6 +195,23 @@ export interface DeepInfo {
   };
 }
 
+/**
+ * The `budget` the backend attaches to an answer (`services/token_budget.py`
+ * `build_budget`). Only the fields the UI reads are typed. `model` is the model
+ * that served the turn, so prices are for it, not for the one asked for.
+ */
+export interface TurnBudget {
+  model?: string | null;
+  /** False when the price table has no row for `model`: its cost is unknown. */
+  known_model?: boolean;
+  /**
+   * What the turn cost, from the response's own usage counters. Null when the
+   * model is unpriced or no usage came back; absent while `actual` is null.
+   * `estimate.cost_usd` is an input-only upper bound and is deliberately not typed.
+   */
+  actual?: { cost_usd?: number | null; priced?: boolean } | null;
+}
+
 /** Live progress of a deep run, built from `tool_call`, `sources_added`, `pause_turn`, `deep_final_turn`. */
 export interface DeepRunProgress {
   toolCalls: DeepToolCall[];
@@ -286,6 +303,7 @@ export interface QueryResponse {
   profile_used: boolean;
   message_id: number | null;
   deep: DeepInfo | null;
+  budget?: TurnBudget | null;
   /** /query computes entailment before returning; null when the check is off. */
   entailment: EntailmentReport | null;
 }
@@ -322,6 +340,8 @@ export interface Message {
      */
     cutOff?: 'dropped' | 'stopped';
     servedModel?: string | null;
+    /** Absent on messages stored before the backend sent it, and on null (accounting failed). */
+    budget?: TurnBudget | null;
     /** Model that declined before a fallback took over, when the stream said so. */
     fallbackFrom?: string | null;
     fallbackUsed?: boolean;
@@ -546,6 +566,32 @@ export interface QueryOptions {
   enablePdfUpload: boolean; // Send actual PDF files to Claude (32MB limit, 100 pages max)
   // Whether this turn sees the user's profile. Per message; not a stored preference.
   useProfile: boolean;
+  // The answer model the user picked, by registry name. null = they have not
+  // chosen, and the query then carries no `answer_model` at all so the server
+  // uses its own configured model and fallback. Not the same as the default's name.
+  answerModel: string | null;
+}
+
+// One pickable answer model, as GET /models describes it. The list comes from
+// the server so a model added or retired there reaches the picker unchanged.
+export interface AnswerModelInfo {
+  name: string;
+  label: string;
+  model: string;
+  blurb: string;
+  // What this library measured about the model, or null. Shown to the user
+  // when they choose; never a reason to hide the model.
+  caution: string | null;
+  has_fallback: boolean;
+  fallback: string | null;
+  is_default: boolean;
+}
+
+export interface AnswerModelsResponse {
+  // Registry name of the configured model, or null when it is not in the registry.
+  default: string | null;
+  configured_model: string;
+  models: AnswerModelInfo[];
 }
 
 // Health status for services
@@ -856,6 +902,7 @@ export const DEFAULT_QUERY_OPTIONS: QueryOptions = {
   enableWebSearch: false,
   enablePdfUpload: false,
   useProfile: true,
+  answerModel: null,
 };
 
 // System prompts types for customization.

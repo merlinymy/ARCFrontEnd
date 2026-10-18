@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { InfoTooltip } from './Tooltip';
+import { ModelPicker } from './ModelPicker';
 import {
   ANSWER_MODES,
   ANSWER_MODE_LABELS,
@@ -159,6 +160,12 @@ export function QueryInput() {
               Delete conversation
             </button>
           )}
+        </div>
+
+        {/* Always visible, outside Advanced Options: the person should see which
+            model will answer, and any caution about it, before they send. */}
+        <div className="mt-2">
+          <ModelPicker />
         </div>
 
         {/* Advanced options panel */}

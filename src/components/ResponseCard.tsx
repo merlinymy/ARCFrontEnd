@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Coins,
   Cpu,
   Database,
   Filter,
@@ -34,7 +35,7 @@ import { FigureView } from './FigureView';
 import { Tooltip } from './Tooltip';
 import { useApp } from '../context/AppContext';
 import type { EntailmentLabelValue, Message, Source } from '../types';
-import { ENTAILMENT_PILL_CLASS, ENTAILMENT_TEXT, formatModelName } from '../lib/citations';
+import { ENTAILMENT_PILL_CLASS, ENTAILMENT_TEXT, formatModelName, formatTurnCost } from '../lib/citations';
 import { describeToolCall } from '../lib/deep';
 
 interface ResponseCardProps {
@@ -180,6 +181,7 @@ export function AnswerFooter({ message }: { message: Message }) {
   if (!m) return null;
 
   const model = formatModelName(m.servedModel);
+  const cost = formatTurnCost(m.budget);
   const trimmed = m.history?.trimmed_turns ?? 0;
   const lookups = m.deep?.tool_calls?.length ?? 0;
   const papersRead = m.longContext?.papers?.length ?? 0;
@@ -199,6 +201,21 @@ export function AnswerFooter({ message }: { message: Message }) {
             : `This answer was written by ${model}.`
         }
         label={m.fallbackUsed ? `Answered by ${model} (fallback)` : `Answered by ${model}`}
+      />
+    );
+  }
+
+  if (cost) {
+    // Priced at the served model's rates, from the usage the API reported for
+    // the answering call. A refusal-fallback's declined attempt is not in it.
+    notes.push(
+      <FooterNote
+        key="cost"
+        icon={<Coins className={ICON} aria-hidden="true" />}
+        reason={`List-price cost of this answer${
+          model ? `, at ${model}'s rates` : ''
+        }. A declined first attempt, if there was one, is not counted.`}
+        label={cost}
       />
     );
   }
