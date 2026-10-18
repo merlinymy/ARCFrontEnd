@@ -1,25 +1,24 @@
 /**
- * What changed, written for the person using ARC rather than the person
- * building it.
+ * Patch notes.
  *
- * Rules for anything added here. **One sentence, starting with a verb** —
- * "Added…", "Improved…", "Replaced…". Someone catching up wants to know what
- * is different, not how it was done or who asked for it. Say what is
- * different *for them*: no component names, and no model or library names
- * they would not meet in the interface. And keep the last section honest,
- * because a release note that only lists wins teaches the reader to skip the
- * next one.
+ * Standard sections, in this order: Added, Improved, Fixed, Changed, Known
+ * issues. One sentence per bullet, starting with what it is rather than with
+ * a verb of ours — "Direct quotes on every citation", not "We added direct
+ * quotes". No narrative, no framing about who asked for what, no component or
+ * model names the reader would not meet in the interface.
  *
- * `CHANGELOG_VERSION` is what gates the dialog. Bump it when there is
- * something worth interrupting someone for, and only then: every bump shows
- * the dialog again to a person who has already dismissed it.
+ * Keep the Known issues section. A release note that only lists wins teaches
+ * the reader to skip the next one.
+ *
+ * `CHANGELOG_VERSION` gates the dialog: bump it only when there is something
+ * worth interrupting someone for, because every bump shows the dialog again
+ * to a person who has already dismissed it.
  */
 
 export const CHANGELOG_VERSION = '2.0.0';
 
 /** Shown under the title, so the reader knows what period this covers. */
-export const CHANGELOG_SUBTITLE =
-  'Everything since version 1.1, released in March';
+export const CHANGELOG_SUBTITLE = 'Changes since version 1.1 (March 2026)';
 
 /** One bullet. A sentence, not a heading and a paragraph. */
 export type ChangelogEntry = string;
@@ -32,86 +31,88 @@ export interface ChangelogSection {
 /** One release. Newest first in {@link RELEASES}. */
 export interface Release {
   version: string;
-  /** When it shipped, for a reader placing it against their own memory. */
   date: string;
   subtitle?: string;
   sections: ChangelogSection[];
   knownLimits?: ChangelogEntry[];
 }
 
-/** The heading for a release's `knownLimits`. */
-export const KNOWN_LIMITS_HEADING = 'Still rough';
+export const KNOWN_LIMITS_HEADING = 'Known issues';
 
-/**
- * The ten things the user asked for, from the feedback transcript that
- * started this work (docs/IMPROVEMENT_PLAN_2026-09.md, section 2).
- *
- * Kept in the order they were given, but written as plain changes rather than
- * as answers to a request — the reader knows what they asked for.
- */
-export const REQUESTED: ChangelogSection = {
-  heading: 'What you asked for',
-  entries: [
-    'Added a direct quote to every citation, so you can find the exact sentence in the paper and open the PDF at it.',
-    'Improved recall by rechunking the whole library — passages were being cut mid-sentence in 28,699 places, hiding text that was there.',
-    'Kept numbers tied to the page and section they came from, and tables are now read as tables rather than flattened into prose.',
-    'Replaced the confidence percentage with a real check of each claim against its own source.',
-    'Added memory across sessions: conversations that follow on, a notebook per project, and a profile you can edit or leave out.',
-    'Added BibTeX and RIS import and export, with duplicate detection and two-way Zotero sync.',
-    'Changed the voice to answer in a sentence when a sentence will do, instead of building a report around every fact.',
-    'Added six ways to ask — question, brainstorm, develop, refine, critique and draft — above the chat box.',
-    'Added writing help for outlines, specific aims, reviewer questions and draft sections.',
-    'Added citation suggestions: describe what you are writing and it finds what to cite from your library.',
-  ],
-};
-
-export const SECTIONS: ChangelogSection[] = [
+const V2_SECTIONS: ChangelogSection[] = [
   {
-    heading: 'Also changed',
+    heading: 'Added',
     entries: [
-      'Replaced the PDF reader with one about four times faster that keeps tables, no longer drops references, and can handle books.',
-      'Corrected 3,505 references that showed a filename instead of a title, and fixed ten credited to the wrong paper.',
-      'Added a map of your library showing how papers group together and which topics connect.',
-      'Made figures clickable and visible without leaving the conversation.',
-      'Added a model picker, with a warning on any model this library has measured trouble with.',
-      'Moved drafts into their own panel beside the chat, so they stay put while you keep talking.',
-      'Added the reasoning as it happens, and what each answer cost.',
-      'Reduced eleven advanced settings to three, collapsed sources by default, and added colour themes.',
-      'Closed the app to anyone not signed in, and blocked repeated password guesses.',
+      'Direct quotes on every citation, with click-through to the highlighted sentence in the PDF.',
+      'A support check on each cited claim, replacing the old confidence percentage.',
+      'Library map showing how papers group together and which topics connect.',
+      'BibTeX and RIS import and export, with duplicate detection and two-way Zotero sync.',
+      'Citation suggestions drawn from your own library.',
+      'Writing help for outlines, specific aims, reviewer questions and draft sections.',
+      'Six response modes: question, brainstorm, develop, refine, critique and draft.',
+      'Memory across sessions, with per-project notebooks and an editable profile.',
+      'Model selection, with guidance on each model.',
+      'Clickable figures, shown without leaving the conversation.',
+      'Colour themes, including low-contrast options.',
+    ],
+  },
+  {
+    heading: 'Improved',
+    entries: [
+      'Search recall, by rechunking the entire library — passages had been cut mid-sentence in 28,699 places.',
+      'PDF reading: around four times faster, keeps tables, no longer drops references, and handles books.',
+      'Reference quality: 3,505 papers that showed a filename now show their real title, authors and journal.',
+      'Answer length, which now fits the question instead of building a report around every fact.',
+      'Numbers keep the page and section they came from.',
+    ],
+  },
+  {
+    heading: 'Fixed',
+    entries: [
+      'Ten papers were credited to a different paper entirely.',
+      'Citations could open the PDF one page early.',
+      'A second scrollbar appeared on the chat page.',
+      'Long answers could stop early without saying so.',
+      'A conversation interrupted mid-answer could not be reopened.',
+      'Search missed papers whose sections were never detected.',
+    ],
+  },
+  {
+    heading: 'Changed',
+    entries: [
+      'Sources are collapsed by default.',
+      'Drafts open in a panel beside the chat rather than inside it.',
+      'Response mode and model sit above the chat box, not in Advanced Options.',
+      'Advanced Options is down from eleven settings to three.',
+      'Signing in is required for everything, and repeated password attempts are blocked.',
     ],
   },
 ];
 
-/**
- * Said plainly, because the reader will meet these anyway and it is better
- * they meet them here.
- */
-export const KNOWN_LIMITS: ChangelogEntry[] = [
-  'Some papers still show a filename as their title — about one in ten has neither a readable DOI nor a title on its first page.',
-  'A few quotes still start mid-sentence, around one in fifty, down from one in five; what remains is damage in the original PDF.',
-  'The library map takes a few minutes to catch up after an upload, because it redraws the whole library each time.',
+const V2_KNOWN_ISSUES: ChangelogEntry[] = [
+  'About one paper in ten still shows a filename as its title, where the PDF carries neither a DOI nor a title on its first page.',
+  'About one quote in fifty still starts mid-sentence, down from one in five; the rest is damage in the original PDF.',
+  'The library map takes a few minutes to catch up after an upload.',
 ];
 
 /**
  * Every release, newest first.
  *
  * A list rather than one current release, because the dialog can be reopened
- * from the header at any time and the reader may be looking for something
- * they half-remember from two releases ago. With one release this renders
- * exactly as a single release would; the shape is here so the next one is an
- * addition rather than a rewrite.
+ * from the header at any time and the reader may be after something they
+ * half-remember from two releases ago. With one release this renders exactly
+ * as a single release would; the shape is here so the next is an addition
+ * rather than a rewrite.
  *
  * To add a release: write its sections above as their own consts, put a new
- * object at the FRONT of this array, and bump `CHANGELOG_VERSION` — which is
- * what decides whether the dialog interrupts someone who has already
- * dismissed the previous one.
+ * object at the FRONT of this array, and bump `CHANGELOG_VERSION`.
  */
 export const RELEASES: Release[] = [
   {
     version: CHANGELOG_VERSION,
     date: 'October 2026',
     subtitle: CHANGELOG_SUBTITLE,
-    sections: [REQUESTED, ...SECTIONS],
-    knownLimits: KNOWN_LIMITS,
+    sections: V2_SECTIONS,
+    knownLimits: V2_KNOWN_ISSUES,
   },
 ];
