@@ -11,15 +11,18 @@ import {
   UserRound,
   FolderKanban,
   PenLine,
+  Sparkles,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { WRITING_PAGE_ENABLED } from '../featureFlags';
 import { PalettePicker } from './PalettePicker';
 import { useAuth } from '../context/AuthContext';
+import { useWhatsNew } from './whatsNewContext';
 
 export function Header() {
   const { state, setTheme, setActivePage, toggleSidebar, openUploadPanel } = useApp();
   const { logout } = useAuth();
+  const { openWhatsNew } = useWhatsNew();
   const { theme } = state;
 
   // Navigation items with responsive labels
@@ -96,6 +99,17 @@ export function Header() {
           ) : (
             <Moon className="w-5 h-5 text-gray-600" />
           )}
+        </button>
+
+        {/* Beside the theme toggle, with the other things about the app rather
+            than about a page. Once the dialog is dismissed this is the only way
+            back to it. */}
+        <button
+          onClick={openWhatsNew}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors text-gray-600 dark:text-gray-400"
+          aria-label="What's new"
+        >
+          <Sparkles className="w-5 h-5" />
         </button>
 
         <button

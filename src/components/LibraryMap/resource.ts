@@ -82,6 +82,13 @@ export class ResourceStore<T> {
     );
   }
 
+  /** Forget everything held. For when the data behind every key changed at once (a rebuilt map). */
+  clear(): void {
+    this.entries.clear();
+    this.latest.clear();
+    this.emit();
+  }
+
   private evict(): void {
     while (this.entries.size > this.maxEntries) {
       const oldest = this.entries.keys().next().value;
@@ -148,6 +155,17 @@ export const passagesStore = new ResourceStore<LibraryMapPassages>(
   },
   { maxEntries: 12, groupOf: (key) => key.split('|')[0] }
 );
+
+/**
+ * Load the map a rebuild just produced. Every cache is dropped, not only the map's: neighbors,
+ * comparisons, passages and the engineering payload were all computed against the old layout,
+ * and paper indices are not stable across builds. The map goes first so its subscribers flip to
+ * "loading" (and unmount the old view) before the other stores empty under them.
+ */
+export function reloadMap(): void {
+  mapStore.load(MAP_KEY, true);
+  for (const store of [paperDetailStore, engineeringStore, collectionsStore, compareStore, passagesStore]) store.clear();
+}
 
 // ---------------------------------------------------------------- errors
 

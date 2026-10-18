@@ -34,6 +34,8 @@ import type {
   LibraryMapFootprint,
   LibraryMapEngineering,
   LibraryMapCollections,
+  LibraryMapStatus,
+  LibraryMapRebuildResult,
   AnswerModelsResponse,
 } from '../types';
 import { getAuthToken } from '../context/AuthContext';
@@ -599,7 +601,7 @@ export async function deletePaper(paperId: string): Promise<DeleteResponse> {
 }
 
 // =============================================================================
-// Library Map API (read-only; see the Library Map contract)
+// Library Map API (read-only apart from the rebuild trigger; see the Library Map contract)
 // =============================================================================
 
 // The whole map in one payload (prebuilt artifact, gzip on the wire).
@@ -666,6 +668,26 @@ export async function getLibraryMapCollections(signal?: AbortSignal): Promise<Li
     signal,
   });
   return handleResponse<LibraryMapCollections>(response);
+}
+
+// Is the map current, and is a rebuild coming or running? Cheap (reads a manifest and a
+// checkpoint), so it is safe to poll while a build is pending.
+export async function getLibraryMapStatus(signal?: AbortSignal): Promise<LibraryMapStatus> {
+  const response = await fetch(`${API_BASE}/library-map/status`, {
+    headers: getAuthHeaders(),
+    signal,
+  });
+  return handleResponse<LibraryMapStatus>(response);
+}
+
+// Build now instead of waiting out the window. `started: false` is not a failure: a build is
+// already running and the request was folded into it.
+export async function rebuildLibraryMap(): Promise<LibraryMapRebuildResult> {
+  const response = await fetch(`${API_BASE}/library-map/rebuild`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<LibraryMapRebuildResult>(response);
 }
 
 // The passages of 1-12 papers projected jointly into 2-D, computed on request

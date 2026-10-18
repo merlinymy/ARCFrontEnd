@@ -10,6 +10,7 @@ import { GroupPanel } from './GroupPanel';
 import { useAskArc, useMapTokens, useMediaQuery, usePrefersReducedMotion, writePrefs } from './hooks';
 import { MapCanvas, type MapCanvasHandle } from './MapCanvas';
 import { MapLegend, ZoomControls } from './MapLegend';
+import { MapRefreshStrip } from './MapRefreshStrip';
 import { FLAG_ORDER, buildCited, buildMapModel, computeMask, groupKey, groupLabel, groupMembers, hasFlag, type GroupRef } from './mapModel';
 import type { MapScene } from './mapRenderer';
 import { MapEmpty, MapError, MapLoading, MapNotBuilt } from './MapStates';
@@ -17,24 +18,46 @@ import { OverviewTab } from './OverviewTab';
 import { PaperPanel } from './PaperPanel';
 import { PaperTable } from './PaperTable';
 import { PassageOverlay } from './PassageOverlay';
-import { FOOTPRINT_KEY, MAP_KEY, describeError, footprintStore, mapStore, paperDetailStore, useLatestResource, useResource } from './resource';
+import { stripKind } from './refreshModel';
+import { FOOTPRINT_KEY, MAP_KEY, describeError, footprintStore, mapStore, paperDetailStore, reloadMap, useLatestResource, useResource } from './resource';
 import { initUi, uiReducer, type Panel } from './state';
 import { InfoTip } from './ui';
+import { useMapRefresh, type MapRefresh } from './useMapRefresh';
 
 /** Library Map page: loaded lazily (React.lazy) so it stays out of the main bundle. */
 export default function LibraryMapPage() {
   const state = useResource(mapStore, MAP_KEY);
   const retry = useCallback(() => mapStore.load(MAP_KEY, true), []);
+  const shownBuiltAt = state?.status === 'success' ? (state.data.header?.built_at ?? null) : null;
+  const refresh = useMapRefresh(shownBuiltAt);
+  const missing = state?.status === 'error' && describeError(state.error).status === 404;
+  const builtOnServer = refresh.status?.built_at ?? null;
+  // With no map on screen there is nothing to disturb, so a build that lands is simply loaded.
+  // (With one on screen the user chooses when: see `onShowNew` below.)
+  useEffect(() => {
+    if (missing && builtOnServer) reloadMap();
+  }, [missing, builtOnServer]);
+
   if (!state || state.status === 'loading') return <MapLoading />;
   if (state.status === 'error') {
     const info = describeError(state.error);
-    return info.status === 404 ? <MapNotBuilt detail={info.message} onRetry={retry} /> : <MapError info={info} onRetry={retry} />;
+    return info.status === 404 ? (
+      <MapNotBuilt
+        detail={info.message}
+        onRetry={retry}
+        body="The map is computed from the indexed papers and saved on the server. Build it from here, or run this on the backend machine and come back:"
+      >
+        <MapRefreshStrip refresh={refresh} />
+      </MapNotBuilt>
+    ) : (
+      <MapError info={info} onRetry={retry} />
+    );
   }
   if (!Array.isArray(state.data.papers) || state.data.papers.length === 0) return <MapEmpty />;
-  return <LibraryMapView data={state.data} />;
+  return <LibraryMapView data={state.data} refresh={refresh} />;
 }
 
-function LibraryMapView({ data }: { data: LibraryMapResponse }) {
+function LibraryMapView({ data, refresh }: { data: LibraryMapResponse; refresh: MapRefresh }) {
   const { state: app, setViewingPdf } = useApp();
   const tokens = useMapTokens();
   const reducedMotion = usePrefersReducedMotion();
@@ -190,6 +213,7 @@ function LibraryMapView({ data }: { data: LibraryMapResponse }) {
   const status = [
     `${formatCount(header?.n_papers ?? model.n)} papers`,
     header?.built_at ? `built ${formatBuiltAt(header.built_at)}` : null,
+    refresh.status && !refresh.stale && stripKind(refresh.status) === 'current' ? 'up to date' : null,
     header?.collection ? `${header.collection}${header.embedding_model ? ` (${header.embedding_model})` : ''}` : null,
   ]
     .filter(Boolean)
@@ -218,6 +242,7 @@ function LibraryMapView({ data }: { data: LibraryMapResponse }) {
             <InfoTip text={caveat} label="How to read the library map" />
           </p>
         </div>
+        <MapRefreshStrip refresh={refresh} onShowNew={reloadMap} />
         <FilterBar
           model={model}
           tab={ui.tab}

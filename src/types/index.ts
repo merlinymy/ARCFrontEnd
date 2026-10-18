@@ -1307,6 +1307,42 @@ export interface LibraryMapEngineering {
   papers: EngineeringPaper[];
 }
 
+/**
+ * GET /library-map/status: whether the map is current, and whether a rebuild is coming or running.
+ * `idle` with `papers_behind > 0` is a real state (nothing scheduled, e.g. after a server restart).
+ */
+export interface LibraryMapRefresh {
+  state: 'idle' | 'scheduled' | 'building';
+  /** false = uploads do not schedule a rebuild; a manual one still works */
+  enabled: boolean;
+  reason: string | null;
+  /** only while `scheduled` */
+  seconds_until: number | null;
+  /** only while `building` */
+  running_for_seconds: number | null;
+  /** another build follows the one running */
+  queued_after: boolean;
+  last_finished_at: string | null;
+  /** the last build's failure; cleared by the next success */
+  last_error: string | null;
+}
+
+export interface LibraryMapStatus {
+  refresh: LibraryMapRefresh;
+  built_at: string | null;
+  collection: string;
+  /** null = no map exists for this collection at all (not "0 papers") */
+  papers_mapped: number | null;
+  papers_in_library: number | null;
+  papers_behind: number | null;
+}
+
+/** POST /library-map/rebuild. `started: false` = a build was already running and this folded into it. */
+export interface LibraryMapRebuildResult {
+  started: boolean;
+  refresh: LibraryMapRefresh;
+}
+
 /** GET /library-map/collections */
 export interface LibraryMapCollections {
   collections: Array<{ collection: string; embedding_model: string | null; built_at: string | null; n_papers: number | null; active: boolean }>;

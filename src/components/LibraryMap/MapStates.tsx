@@ -39,6 +39,7 @@ export function MapNotBuilt({
   title = 'The library map hasn’t been built yet',
   body = 'The map is computed once from the indexed papers and saved on the server. Run this on the backend machine, then come back:',
   extraArgs = '',
+  children,
 }: {
   detail: string;
   onRetry: () => void;
@@ -46,6 +47,8 @@ export function MapNotBuilt({
   body?: string;
   /** appended to the build command (e.g. --collection name) */
   extraArgs?: string;
+  /** shown above the command: what the server is doing about it */
+  children?: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
   const fromDetail = /Run:\s*(.+)$/.exec(detail)?.[1]?.trim();
@@ -68,7 +71,8 @@ export function MapNotBuilt({
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{body}</p>
+          {children && <div className="mt-3">{children}</div>}
+          <p className={`${children ? 'mt-3' : 'mt-1'} text-sm text-gray-600 dark:text-gray-400`}>{body}</p>
           <div className="mt-3 flex items-stretch overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
             <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap bg-gray-50 px-3 py-2 font-mono text-[13px] text-gray-900 dark:bg-gray-800 dark:text-gray-100">
               {command}

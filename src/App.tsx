@@ -7,6 +7,7 @@ import { ProfilePage } from './components/ProfilePage';
 import { ProjectsPage } from './components/ProjectsPage';
 import { BibliographyPage } from './components/Bibliography';
 import { WritingPage } from './components/Writing';
+import { WhatsNewProvider } from './components/WhatsNewProvider';
 import { ToastContainer } from './components/Toast';
 import { BatchUploadPanel } from './components/BatchUploadPanel';
 import { Loader2 } from 'lucide-react';
@@ -89,7 +90,9 @@ function AuthenticatedApp() {
   // Show main app if authenticated
   return (
     <AppProvider>
-      <AppContent />
+      <WhatsNewProvider>
+        <AppContent />
+      </WhatsNewProvider>
     </AppProvider>
   );
 }
